@@ -1,0 +1,127 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "Title (defaults to tag)"
+        required: false
+        type: string
+      summary:
+        description: "Summary (appears above auto-generated notes)"
+        required: false
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  # Create the draft release once so the matrix builds have a target to upload to.
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Read version from Cargo.toml
+        id: version
+        run: |
+          tag="v$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)".*/\1/')"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        run: |
+          set -euo pipefail
+          title="${{ inputs.title }}"
+          [ -z "$title" ] && title="$TAG"
+
+          args=()
+          [ "${{ inputs.prerelease }}" = "true" ] && args+=(--prerelease)
+          if [ -n "$RELEASE_SUMMARY" ]; then
+            printf '%s' "$RELEASE_SUMMARY" > summary.md
+            args+=(--notes-file summary.md)
+          fi
+
+          # Reuse an existing draft for this tag if a previous run already made one.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; reusing it."
+          else
+            gh release create "$TAG" --title "$title" --draft "${args[@]}" --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SUMMARY: ${{ inputs.summary }}
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          name="bash-splitter-${TAG}-${{ matrix.target }}"
+          stage="stage"
+          mkdir -p "$stage"
+          cp "target/${{ matrix.target }}/release/bash-splitter" "$stage/"
+          cp README.md "$stage/"
+          cp LICENSE* "$stage/" 2>/dev/null || true
+          tar -czf "$name.tar.gz" -C "$stage" .
+          echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+        env:
+          TAG: ${{ needs.create-release.outputs.tag }}
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $name = "bash-splitter-$($env:TAG)-${{ matrix.target }}"
+          $stage = "stage"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/bash-splitter.exe" $stage/
+          Copy-Item README.md $stage/
+          Copy-Item LICENSE* $stage/ -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$stage/*" -DestinationPath "$name.zip" -Force
+          "ASSET=$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+        env:
+          TAG: ${{ needs.create-release.outputs.tag }}
+
+      - name: Upload asset to release
+        shell: bash
+        run: gh release upload "$TAG" "$ASSET" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
