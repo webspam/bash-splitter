@@ -94,7 +94,7 @@ fn command_sub_of_subshell_is_descended() {
 #[test]
 fn nested_escaped_backticks_are_descended() {
     // Raw string so the backslashes reach bash verbatim: echo `echo \`date\``
-    let cmds = split(r#"echo `echo \`date\`` "#);
+    let cmds = split(r"echo `echo \`date\`` ");
     assert!(
         cmds.iter().any(|c| name(c) == Some("date")),
         "the doubly-nested `date` should surface: {cmds:?}"

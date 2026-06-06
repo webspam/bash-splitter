@@ -1,0 +1,9 @@
+# Transitive duplicates pulled in via brush-parser; not ours to dedupe.
+allowed-duplicate-crates = [
+    "darling",
+    "darling_core",
+    "darling_macro",
+    "foldhash",
+    "hashbrown",
+    "wit-bindgen",
+]

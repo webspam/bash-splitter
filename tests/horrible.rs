@@ -19,7 +19,7 @@ fn by_name<'a>(cmds: &'a [serde_json::Value], name: &str) -> &'a serde_json::Val
 /// when a prefix assignment, not the command name, occupies argv[0].
 fn by_argv_token<'a>(cmds: &'a [serde_json::Value], token: &str) -> &'a serde_json::Value {
     cmds.iter()
-        .find(|c| argv(c).iter().any(|a| *a == token))
+        .find(|c| argv(c).contains(&token))
         .unwrap_or_else(|| panic!("no command with {token:?} in argv"))
 }
 
@@ -30,8 +30,8 @@ fn the_monster_parses_and_splits() {
     for (i, c) in cmds.iter().enumerate() {
         eprintln!(
             "[{i}] from={} to={} argv={:?}\n     {}",
-            piped_from_previous(c) as u8,
-            pipes_to_next(c) as u8,
+            u8::from(piped_from_previous(c)),
+            u8::from(pipes_to_next(c)),
             argv(c),
             command_text(c).replace('\n', "\n     ")
         );

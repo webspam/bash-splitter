@@ -175,14 +175,14 @@ fn walk_command(
             let start = out.len();
             walk_compound_command(compound, out, subs);
             apply_pipe_boundary(&mut out[start..], piped_from_previous);
-            collect_redirect_list_subs(redirects, subs);
+            collect_redirect_list_subs(redirects.as_ref(), subs);
         }
         // The body runs when the function is later called, so surface its commands.
         ast::Command::Function(f) => walk_compound_command(&f.body.0, out, subs),
         // `[[ ... ]]` runs no command, but its words and redirects can hide substitutions.
         ast::Command::ExtendedTest(e, redirects) => {
             collect_extended_test_subs(&e.expr, subs);
-            collect_redirect_list_subs(redirects, subs);
+            collect_redirect_list_subs(redirects.as_ref(), subs);
         }
     }
 }
@@ -412,6 +412,8 @@ fn collect_param_expr_subs(expr: &word::ParameterExpr, subs: &mut Vec<String>) {
 
 // Redirect targets are expanded, so a substitution in one runs (`> $(cmd)`,
 // `<<< "$(cmd)"`, `> >(cmd)`, or an unquoted heredoc body).
+// Arms are grouped by redirect family for legibility, so two share a body.
+#[allow(clippy::match_same_arms)]
 fn collect_redirect_subs(redirect: &ast::IoRedirect, subs: &mut Vec<String>) {
     use ast::IoFileRedirectTarget as T;
     use ast::IoRedirect as R;
@@ -429,7 +431,7 @@ fn collect_redirect_subs(redirect: &ast::IoRedirect, subs: &mut Vec<String>) {
 }
 
 // Redirects can also hang off a compound command or `[[ ]]` (`while ...; done > $(cmd)`).
-fn collect_redirect_list_subs(redirects: &Option<ast::RedirectList>, subs: &mut Vec<String>) {
+fn collect_redirect_list_subs(redirects: Option<&ast::RedirectList>, subs: &mut Vec<String>) {
     for redirect in redirects.iter().flat_map(|r| &r.0) {
         collect_redirect_subs(redirect, subs);
     }
