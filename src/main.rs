@@ -1,10 +1,7 @@
-//! Splits a bash command string into its individual commands, grouped by the
-//! pipeline each belongs to. Reads the raw command on stdin, writes a JSON array
-//! of pipelines on stdout: each pipeline is an array of its stages in source
-//! order, so a stage's pipe position is implied by its index (stage 0 reads no
-//! pipe; the last stage feeds none). Commands hidden inside command and process
-//! substitutions are surfaced too, as their own trailing pipelines. Rule evaluation
-//! lives in the caller; this binary only splits.
+//! Splits a bash command (on stdin) into pipelines, written as a JSON array of
+//! stage arrays in source order. Commands inside command and process substitutions
+//! surface as their own trailing pipelines. This binary only splits; the caller
+//! evaluates rules.
 
 use brush_parser::word::{self, WordPiece, WordPieceWithSource};
 use brush_parser::{Parser, ParserOptions, ast};
@@ -16,23 +13,19 @@ use std::io::{Read, Write};
 struct Stage {
     /// Reconstructed text of this single command.
     command: String,
-    /// Leading env assignments (`LD_PRELOAD=x` in `LD_PRELOAD=x cmd`), or the lone
-    /// assignment of a bare `FOO=bar`. These set the environment, not argv.
+    /// Leading env assignments (the `LD_PRELOAD=x` in `LD_PRELOAD=x cmd`, or a bare `FOO=bar`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     assignments: Vec<String>,
     /// The command actually invoked (`cmd` in `LD_PRELOAD=x cmd -a`). Absent for a
     /// bare assignment (`FOO=bar`), which runs nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
-    /// The command's arguments, in order. Redirects and process substitutions are
-    /// excluded.
+    /// The command's arguments, in order. Redirects and process substitutions are excluded.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     args: Vec<String>,
 }
 
-// A walked command plus whether its stdin comes from an upstream `|`. The flag is
-// internal: it groups stages into pipelines and is not serialized (the output
-// implies pipe position from a stage's index within its pipeline).
+/// A walked command plus an internal flag used to group stages into pipelines.
 struct Walked {
     command: String,
     assignments: Vec<String>,
@@ -84,10 +77,8 @@ fn main() {
     }
 }
 
-// Parses each substitution's source and appends its commands after the ones already
-// walked, level by level so nested substitutions surface too. They land at the end
-// because they are separate programs; keeping them out of the main run preserves its
-// pipeline grouping (which is positional).
+/// Appends each substitution's commands after the walked ones, level by level so
+/// nested substitutions surface too.
 fn expand_substitutions(commands: &mut Vec<Walked>, mut pending: Vec<String>) {
     while !pending.is_empty() {
         let mut next = Vec::new();
@@ -98,8 +89,8 @@ fn expand_substitutions(commands: &mut Vec<Walked>, mut pending: Vec<String>) {
     }
 }
 
-// Parses one source string and walks it. A substitution that does not parse on its
-// own surfaces nothing rather than aborting the whole split.
+/// Parses one source string and walks it. A substitution that does not parse on its
+/// own surfaces nothing rather than aborting the whole split.
 fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<String>) {
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
     let Ok(program) = parser.parse_program() else {
@@ -110,8 +101,8 @@ fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<String>) {
     }
 }
 
-// Buckets the flat walk order into pipelines: a command that reads an upstream
-// pipe continues the current pipeline; any other command starts a new one.
+/// Buckets the flat walk order into pipelines: a command that reads an upstream
+/// pipe continues the current pipeline; any other command starts a new one.
 fn group_into_pipelines(commands: Vec<Walked>) -> Vec<Vec<Stage>> {
     let mut pipelines: Vec<Vec<Stage>> = Vec::new();
     for cmd in commands {
@@ -187,8 +178,8 @@ fn walk_command(
     }
 }
 
-// Surfaces every command nested in a compound's bodies and conditions; blocks are
-// never emitted whole.
+/// Surfaces every command nested in a compound's bodies and conditions; blocks are
+/// never emitted whole.
 fn walk_compound_command(
     compound: &ast::CompoundCommand,
     out: &mut Vec<Walked>,
@@ -239,18 +230,16 @@ fn walk_compound_command(
     }
 }
 
-// When a grouping is itself a stage in a pipeline, only its first command reads
-// the upstream pipe. `|=` so a connection from the group's own inner pipeline is
-// preserved. The downstream side needs no handling: the command after the group
-// records its own upstream connection, which is what grouping keys off.
+/// When a grouping is itself a pipeline stage, only its first command reads the
+/// upstream pipe; `|=` to keep any connection from the group's own inner pipeline.
 fn apply_pipe_boundary(group: &mut [Walked], piped_from_previous: bool) {
     if let Some(first) = group.first_mut() {
         first.piped_from_previous |= piped_from_previous;
     }
 }
 
-// Env assignments preceding the command name. Only AssignmentWords count; a prefix
-// is otherwise just redirects.
+/// Env assignments preceding the command name. Only [`AssignmentWord`](ast::CommandPrefixOrSuffixItem::AssignmentWord)s count; a prefix
+/// is otherwise just redirects.
 fn prefix_assignments(simple: &ast::SimpleCommand) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(prefix) = &simple.prefix {
@@ -263,8 +252,8 @@ fn prefix_assignments(simple: &ast::SimpleCommand) -> Vec<String> {
     out
 }
 
-// The command's arguments. A suffix `foo=bar` is a literal arg, not an assignment.
-// Redirects and process substitutions are excluded.
+/// The command's arguments. A suffix `foo=bar` is a literal arg, not an assignment.
+/// Redirects and process substitutions are excluded.
 fn suffix_args(simple: &ast::SimpleCommand) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(suffix) = &simple.suffix {
@@ -280,7 +269,7 @@ fn suffix_args(simple: &ast::SimpleCommand) -> Vec<String> {
     out
 }
 
-// `[[ ... ]]` words can hide substitutions (`[[ -n $(cmd) ]]`); surface them.
+/// `[[ ... ]]` words can hide substitutions (`[[ -n $(cmd) ]]`); surface them.
 fn collect_extended_test_subs(expr: &ast::ExtendedTestExpr, subs: &mut Vec<String>) {
     use ast::ExtendedTestExpr as E;
     match expr {
@@ -297,8 +286,8 @@ fn collect_extended_test_subs(expr: &ast::ExtendedTestExpr, subs: &mut Vec<Strin
     }
 }
 
-// Collects the source of every substitution in a simple command: command
-// substitutions inside its words, and the bodies of process substitutions.
+/// Collects the source of every substitution in a simple command: command
+/// substitutions inside its words, and the bodies of process substitutions.
 fn collect_simple_subs(simple: &ast::SimpleCommand, subs: &mut Vec<String>) {
     let prefix = simple.prefix.iter().flat_map(|p| &p.0);
     let suffix = simple.suffix.iter().flat_map(|s| &s.0);
@@ -319,7 +308,7 @@ fn collect_simple_subs(simple: &ast::SimpleCommand, subs: &mut Vec<String>) {
     }
 }
 
-// Pulls the bodies of any command substitutions out of a single word.
+/// Pulls the bodies of any command substitutions out of a single word.
 fn collect_word_subs(word: &str, subs: &mut Vec<String>) {
     let Ok(pieces) = word::parse(word, &ParserOptions::default()) else {
         return;
@@ -345,8 +334,8 @@ fn collect_piece_subs(pieces: &[WordPieceWithSource], subs: &mut Vec<String>) {
     }
 }
 
-// A parameter expansion's value and pattern words are themselves expanded, so a
-// substitution in one runs (`${x:-$(cmd)}`, `${x/$(cmd)/y}`, `${x:$(cmd)}`).
+/// A parameter expansion's value and pattern words are themselves expanded, so a
+/// substitution in one runs (`${x:-$(cmd)}`, `${x/$(cmd)/y}`, `${x:$(cmd)}`).
 fn collect_param_expr_subs(expr: &word::ParameterExpr, subs: &mut Vec<String>) {
     use word::ParameterExpr as P;
     match expr {
@@ -410,9 +399,9 @@ fn collect_param_expr_subs(expr: &word::ParameterExpr, subs: &mut Vec<String>) {
     }
 }
 
-// Redirect targets are expanded, so a substitution in one runs (`> $(cmd)`,
-// `<<< "$(cmd)"`, `> >(cmd)`, or an unquoted heredoc body).
-// Arms are grouped by redirect family for legibility, so two share a body.
+/// Redirect targets are expanded, so a substitution in one runs (`> $(cmd)`,
+/// `<<< "$(cmd)"`, `> >(cmd)`, or an unquoted heredoc body).
+/// Arms are grouped by redirect family for legibility, so two share a body.
 #[allow(clippy::match_same_arms)]
 fn collect_redirect_subs(redirect: &ast::IoRedirect, subs: &mut Vec<String>) {
     use ast::IoFileRedirectTarget as T;
@@ -430,7 +419,7 @@ fn collect_redirect_subs(redirect: &ast::IoRedirect, subs: &mut Vec<String>) {
     }
 }
 
-// Redirects can also hang off a compound command or `[[ ]]` (`while ...; done > $(cmd)`).
+/// Redirects can also hang off a compound command or `[[ ]]` (`while ...; done > $(cmd)`).
 fn collect_redirect_list_subs(redirects: Option<&ast::RedirectList>, subs: &mut Vec<String>) {
     for redirect in redirects.iter().flat_map(|r| &r.0) {
         collect_redirect_subs(redirect, subs);

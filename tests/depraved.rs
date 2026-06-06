@@ -12,10 +12,8 @@ fn any_argv_has(cmds: &[serde_json::Value], token: &str) -> bool {
         .any(|c| argv(c).iter().any(|a| a.contains(token)))
 }
 
-// a heredoc flips the parser into a literal-text state. Everything between
-// `<<EOF` and `EOF` is data, not commands. A line-oriented splitter would emit the
-// body as real commands -- so `rm -rf /` inside a heredoc would register with the
-// rule engine as something actually run. It must not.
+// Heredoc body is data, not commands; a line-oriented splitter would leak `rm -rf /`
+// as something actually run.
 #[test]
 fn heredoc_body_is_not_split_into_commands() {
     let input = "cat <<EOF\nrm -rf / --no-preserve-root\nsudo dd if=/dev/zero of=/dev/sda\nEOF\n";
@@ -36,9 +34,8 @@ fn heredoc_body_is_not_split_into_commands() {
     );
 }
 
-// `if`, `then`, `for`, `done`, ... are reserved words ONLY in command
-// position (the first word). As later words they are ordinary arguments. A parser
-// that keys off the token tries to open a control-flow block and falls over.
+// `if`, `then`, `for`, ... are reserved only in command position; as later words
+// they are ordinary arguments.
 #[test]
 fn reserved_words_as_arguments_are_plain_words() {
     let cmds = split("echo if then else fi for do done while");
@@ -71,10 +68,8 @@ fn arithmetic_expansion_stays_in_argv() {
     );
 }
 
-// one space flips the meaning. `$( (cmd) )` is a command substitution whose
-// body is a subshell -- POSIX literally recommends the space to disambiguate it from
-// `$(( ))`. The substitution runs a command, so that command is surfaced for the
-// rule engine: `exit` appears as its own entry.
+// `$( (cmd) )` is a command substitution wrapping a subshell (the space disambiguates
+// it from `$(( ))`); the inner command must surface.
 #[test]
 fn command_sub_of_subshell_is_descended() {
     let cmds = split("echo $( (exit 1) )");
