@@ -100,6 +100,12 @@ pub fn name(cmd: &Value) -> Option<&str> {
     cmd.get("name").map(|v| v.as_str().expect("name is string"))
 }
 
+/// True if splitting `input` surfaces a command named `inner`. The coverage tests
+/// hide a command behind some expansion and assert it still shows up.
+pub fn surfaces(input: &str, inner: &str) -> bool {
+    split(input).iter().any(|c| name(c) == Some(inner))
+}
+
 pub fn piped_from_previous(cmd: &Value) -> bool {
     cmd["piped_from_previous"].as_bool().unwrap_or(false)
 }

@@ -1,0 +1,7 @@
+[profile.default]
+# Show failure output inline as it happens, then again in the final summary.
+failure-output = "immediate-final"
+# Quiet on pass: only surface failing tests during the run.
+status-level = "fail"
+# In the final summary, also flag any leak/slow outliers.
+final-status-level = "slow"
