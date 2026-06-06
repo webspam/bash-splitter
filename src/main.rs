@@ -196,7 +196,14 @@ fn walk_compound_command(
             }
             walk_compound_list(&f.body.list, out, subs);
         }
-        C::ArithmeticForClause(f) => walk_compound_list(&f.body.list, out, subs),
+        // The init/cond/update expressions are arithmetic, and arithmetic is
+        // command-substituted (`for ((i=$(cmd); ...))`); scan them, then the body.
+        C::ArithmeticForClause(f) => {
+            for expr in [&f.initializer, &f.condition, &f.updater].into_iter().flatten() {
+                collect_word_subs(&expr.value, subs);
+            }
+            walk_compound_list(&f.body.list, out, subs);
+        }
         // Condition list, then `do` body.
         C::WhileClause(w) | C::UntilClause(w) => {
             walk_compound_list(&w.0, out, subs);
@@ -225,8 +232,9 @@ fn walk_compound_command(
             }
         }
         C::Coprocess(c) => walk_command(&c.body, false, out, subs),
-        // Arithmetic evaluates an expression; there is no command to surface.
-        C::Arithmetic(_) => {}
+        // No command to *run*, but arithmetic is command-substituted before it is
+        // evaluated, so `(( x=$(cmd) ))` runs cmd.
+        C::Arithmetic(a) => collect_word_subs(&a.expr.value, subs),
     }
 }
 
@@ -326,11 +334,48 @@ fn collect_piece_subs(pieces: &[WordPieceWithSource], subs: &mut Vec<String>) {
             WordPiece::DoubleQuotedSequence(inner)
             | WordPiece::GettextDoubleQuotedSequence(inner) => collect_piece_subs(inner, subs),
             // `${x:-$(cmd)}`, `${x/$(cmd)/y}`: the value/pattern words expand.
-            WordPiece::ParameterExpansion(expr) => collect_param_expr_subs(expr, subs),
+            WordPiece::ParameterExpansion(expr) => {
+                // An array subscript is an arithmetic context (`${arr[$(cmd)]}`).
+                if let Some(index) = param_subscript(expr) {
+                    collect_word_subs(index, subs);
+                }
+                collect_param_expr_subs(expr, subs);
+            }
             // `$(( $(cmd) ))` runs cmd while evaluating the expression.
             WordPiece::ArithmeticExpression(a) => collect_word_subs(&a.value, subs),
             _ => {}
         }
+    }
+}
+
+/// The subscript text of an array-indexed parameter (`arr[idx]`), if any. The
+/// index is arithmetic-evaluated, so a substitution in it runs (`${arr[$(cmd)]}`).
+fn param_subscript(expr: &word::ParameterExpr) -> Option<&str> {
+    use word::ParameterExpr as P;
+    // Every variant but the prefix/key listings carries a `parameter`.
+    let parameter = match expr {
+        P::Parameter { parameter, .. }
+        | P::UseDefaultValues { parameter, .. }
+        | P::AssignDefaultValues { parameter, .. }
+        | P::IndicateErrorIfNullOrUnset { parameter, .. }
+        | P::UseAlternativeValue { parameter, .. }
+        | P::ParameterLength { parameter, .. }
+        | P::RemoveSmallestSuffixPattern { parameter, .. }
+        | P::RemoveLargestSuffixPattern { parameter, .. }
+        | P::RemoveSmallestPrefixPattern { parameter, .. }
+        | P::RemoveLargestPrefixPattern { parameter, .. }
+        | P::Substring { parameter, .. }
+        | P::Transform { parameter, .. }
+        | P::UppercaseFirstChar { parameter, .. }
+        | P::UppercasePattern { parameter, .. }
+        | P::LowercaseFirstChar { parameter, .. }
+        | P::LowercasePattern { parameter, .. }
+        | P::ReplaceSubstring { parameter, .. } => parameter,
+        P::VariableNames { .. } | P::MemberKeys { .. } => return None,
+    };
+    match parameter {
+        word::Parameter::NamedWithIndex { index, .. } => Some(index),
+        _ => None,
     }
 }
 
