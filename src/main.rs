@@ -350,19 +350,51 @@ fn collect_piece_subs(pieces: &[WordPieceWithSource], subs: &mut Vec<String>) {
 fn collect_param_expr_subs(expr: &word::ParameterExpr, subs: &mut Vec<String>) {
     use word::ParameterExpr as P;
     match expr {
-        P::UseDefaultValues { default_value: Some(s), .. }
-        | P::AssignDefaultValues { default_value: Some(s), .. }
-        | P::UseAlternativeValue { alternative_value: Some(s), .. }
-        | P::IndicateErrorIfNullOrUnset { error_message: Some(s), .. }
-        | P::RemoveSmallestSuffixPattern { pattern: Some(s), .. }
-        | P::RemoveLargestSuffixPattern { pattern: Some(s), .. }
-        | P::RemoveSmallestPrefixPattern { pattern: Some(s), .. }
-        | P::RemoveLargestPrefixPattern { pattern: Some(s), .. }
-        | P::UppercaseFirstChar { pattern: Some(s), .. }
-        | P::UppercasePattern { pattern: Some(s), .. }
-        | P::LowercaseFirstChar { pattern: Some(s), .. }
-        | P::LowercasePattern { pattern: Some(s), .. } => collect_word_subs(s, subs),
-        P::ReplaceSubstring { pattern, replacement, .. } => {
+        P::UseDefaultValues {
+            default_value: Some(s),
+            ..
+        }
+        | P::AssignDefaultValues {
+            default_value: Some(s),
+            ..
+        }
+        | P::UseAlternativeValue {
+            alternative_value: Some(s),
+            ..
+        }
+        | P::IndicateErrorIfNullOrUnset {
+            error_message: Some(s),
+            ..
+        }
+        | P::RemoveSmallestSuffixPattern {
+            pattern: Some(s), ..
+        }
+        | P::RemoveLargestSuffixPattern {
+            pattern: Some(s), ..
+        }
+        | P::RemoveSmallestPrefixPattern {
+            pattern: Some(s), ..
+        }
+        | P::RemoveLargestPrefixPattern {
+            pattern: Some(s), ..
+        }
+        | P::UppercaseFirstChar {
+            pattern: Some(s), ..
+        }
+        | P::UppercasePattern {
+            pattern: Some(s), ..
+        }
+        | P::LowercaseFirstChar {
+            pattern: Some(s), ..
+        }
+        | P::LowercasePattern {
+            pattern: Some(s), ..
+        } => collect_word_subs(s, subs),
+        P::ReplaceSubstring {
+            pattern,
+            replacement,
+            ..
+        } => {
             collect_word_subs(pattern, subs);
             if let Some(r) = replacement {
                 collect_word_subs(r, subs);
