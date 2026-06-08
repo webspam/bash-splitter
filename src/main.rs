@@ -12,10 +12,6 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Windows shells feed CRLF; normalize to LF so a stray `\r` doesn't cling to the
-    // last token and corrupt argv (bash treats a bare `\r` as an ordinary character).
-    let input = input.replace("\r\n", "\n").replace('\r', "\n");
-
     let pipelines = match split(&input) {
         Ok(pipelines) => pipelines,
         // The caller decides what an unparseable command means; we just signal it.

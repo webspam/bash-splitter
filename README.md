@@ -51,7 +51,7 @@ Each stage carries a stable `id`; beyond the split words it may also carry the f
 
 ## Scope
 
-This binary only splits; rule evaluation is left to the caller. CRLF input (e.g. from PowerShell on Windows) is normalized to LF so no stray `\r` is left on the last token. A parse error exits non-zero so the caller can decide what an unparseable command means.
+This binary only splits; rule evaluation is left to the caller. A parse error exits non-zero so the caller can decide what an unparseable command means.
 
 ## Usage
 
