@@ -7,7 +7,6 @@ use serde_json::Value;
 
 /// Flatten a nested structure into a list to find a stage by name.
 fn flatten_nested(pipelines: &[Vec<Value>]) -> Vec<Value> {
-    let mut result = Vec::new();
     fn recurse(stage: &Value, out: &mut Vec<Value>) {
         out.push(stage.clone());
         if let Some(subs) = stage.get("substitutions").and_then(Value::as_array) {
@@ -20,6 +19,7 @@ fn flatten_nested(pipelines: &[Vec<Value>]) -> Vec<Value> {
             }
         }
     }
+    let mut result = Vec::new();
     for pipeline in pipelines {
         for stage in pipeline {
             recurse(stage, &mut result);
@@ -41,10 +41,10 @@ fn find_stage(pipelines: &[Vec<Value>], n: &str) -> Value {
 fn is_child_of(child: &Value, parent: &Value) -> bool {
     if let Some(subs) = parent.get("substitutions").and_then(Value::as_array) {
         for pipeline in subs {
-            if let Some(stages) = pipeline.as_array() {
-                if stages.iter().any(|s| is_same_stage(s, child)) {
-                    return true;
-                }
+            if let Some(stages) = pipeline.as_array()
+                && stages.iter().any(|s| is_same_stage(s, child))
+            {
+                return true;
             }
         }
     }

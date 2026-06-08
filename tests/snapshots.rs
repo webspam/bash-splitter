@@ -8,12 +8,13 @@ use std::path::Path;
 /// 2. Run the binary to get actual output: `echo '...' | target/release/bash-splitter > NAME.flat.json`
 /// 3. Do the same for nested mode: `echo '...' | target/release/bash-splitter -n > NAME.nested.json`
 /// 4. Add a test function below that calls `test_snapshot("NAME")`
+///
 /// Snapshots verify that the output format is stable across changes.
 fn test_snapshot(name: &str) {
     let snapshot_dir = Path::new("tests/snapshots");
-    let input_path = snapshot_dir.join(format!("{}.sh", name));
-    let flat_path = snapshot_dir.join(format!("{}.flat.json", name));
-    let nested_path = snapshot_dir.join(format!("{}.nested.json", name));
+    let input_path = snapshot_dir.join(format!("{name}.sh"));
+    let flat_path = snapshot_dir.join(format!("{name}.flat.json"));
+    let nested_path = snapshot_dir.join(format!("{name}.nested.json"));
 
     let input = fs::read_to_string(&input_path)
         .unwrap_or_else(|e| panic!("failed to read {}: {e}", input_path.display()));
@@ -23,7 +24,7 @@ fn test_snapshot(name: &str) {
         let expected = fs::read_to_string(&flat_path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", flat_path.display()));
         let actual = run_flat(&input);
-        assert_eq!(actual, expected, "flat mode snapshot mismatch for {}", name);
+        assert_eq!(actual, expected, "flat mode snapshot mismatch for {name}");
     }
 
     // Test nested mode
@@ -31,11 +32,7 @@ fn test_snapshot(name: &str) {
         let expected = fs::read_to_string(&nested_path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", nested_path.display()));
         let actual = run_nested(&input);
-        assert_eq!(
-            actual, expected,
-            "nested mode snapshot mismatch for {}",
-            name
-        );
+        assert_eq!(actual, expected, "nested mode snapshot mismatch for {name}");
     }
 }
 
