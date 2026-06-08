@@ -1,8 +1,7 @@
-//! Splits a bash command (on stdin) into pipelines, written as a JSON array of
-//! stage arrays in source order. Commands inside command and process substitutions
-//! surface as their own trailing pipelines, each carrying a `parent` id back to the
-//! stage it was hidden in (and that stage lists it in `children`). This binary only
-//! splits; the caller evaluates rules.
+//! Splits a bash command (on stdin) into pipelines, as a JSON array of stage arrays
+//! in source order. Commands inside command and process substitutions surface as
+//! their own trailing pipelines, each with a `parent` id back to the stage it came
+//! from (which lists it in `children`). This only splits; the caller evaluates rules.
 
 use brush_parser::word::{self, WordPiece, WordPieceWithSource};
 use brush_parser::{Parser, ParserOptions, ast};
@@ -37,19 +36,18 @@ struct Stage {
     /// first-seen order. A single-quoted or quoted-heredoc reference contributes none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     variables: Vec<String>,
-    /// The `id` of the stage this one was surfaced from, when it came out of a
-    /// substitution (`echo` from `cd "$(echo pie)"`). Absent for a top-level command,
-    /// or one hidden in a container that runs nothing itself (`[[ -n $(cmd) ]]`).
+    /// The `id` of the stage this one surfaced from (`cd`, for the `echo` in `cd "$(echo pie)"`).
+    /// Absent for top-level, or a substitution in a container that runs nothing (`[[ ]]`).
     #[serde(skip_serializing_if = "Option::is_none")]
     parent: Option<usize>,
     /// The `id`s of the stages surfaced from this one's substitutions. Non-empty marks
-    /// a complex command: its arguments hide commands that run as their own stages.
+    /// a complex command whose words or redirects hide other commands.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     children: Vec<usize>,
 }
 
-/// One I/O redirect on a command. `kind` discriminates the target so callers branch
-/// without re-parsing the operator: `file`, `fd`, `process_sub`, `herestring`, `heredoc`.
+/// One I/O redirect on a command. `kind` tags the target family: `file`, `fd`,
+/// `process_sub`, `herestring`, `heredoc`.
 #[derive(Serialize)]
 struct Redirect {
     /// The explicit fd, if the source gave one (`2>` -> 2). Absent means bash's default.
@@ -75,7 +73,7 @@ struct HereDoc {
     delimiter: String,
     /// False when the delimiter is quoted (`<<'EOF'`), which suppresses expansion.
     expands: bool,
-    /// The body text, exactly as written (no tab stripping; `<<-` shows in `op`).
+    /// The raw body text; leading tabs are stripped for `<<-` (shown in `op`), as bash does.
     body: String,
 }
 
@@ -107,9 +105,8 @@ fn main() {
         std::process::exit(1);
     }
 
-    // PowerShell and other Windows shells feed CRLF; normalize to LF so a trailing
-    // `\r` never clings to the last token. bash treats a bare `\r` as an ordinary
-    // character, so leaving it in would corrupt argv.
+    // Windows shells feed CRLF; normalize to LF so a stray `\r` doesn't cling to the
+    // last token and corrupt argv (bash treats a bare `\r` as an ordinary character).
     let input = input.replace("\r\n", "\n").replace('\r', "\n");
 
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
@@ -142,8 +139,8 @@ fn main() {
     let pipelines = group_into_pipelines(commands);
 
     let json = serde_json::to_string(&pipelines).expect("Stage is always serializable");
-    // A downstream consumer closing stdout early is a normal end-of-work signal,
-    // not a failure; exit cleanly rather than panicking on the broken pipe.
+    // A consumer closing stdout early is normal, not a failure; exit cleanly on the
+    // broken pipe rather than panicking.
     if let Err(e) = writeln!(std::io::stdout(), "{json}") {
         if e.kind() == std::io::ErrorKind::BrokenPipe {
             std::process::exit(0);
@@ -352,8 +349,8 @@ fn walk_compound_command(
     }
 }
 
-/// When a grouping is itself a pipeline stage, only its first command reads the
-/// upstream pipe; `|=` to keep any connection from the group's own inner pipeline.
+/// When a grouping is itself a pipeline stage, its first inner command is the one
+/// that reads the upstream pipe; the group's internal pipe flags are already set.
 fn apply_pipe_boundary(group: &mut [Walked], piped_from_previous: bool) {
     if let Some(first) = group.first_mut() {
         first.piped_from_previous |= piped_from_previous;
@@ -405,8 +402,7 @@ fn simple_redirects(simple: &ast::SimpleCommand) -> Vec<Redirect> {
         .collect()
 }
 
-/// Structures one redirect for output. `kind` tags the target family so callers
-/// branch without re-parsing the operator.
+/// Structures one redirect for output.
 fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
     use ast::IoFileRedirectTarget as T;
     use ast::IoRedirect as R;
@@ -476,8 +472,7 @@ fn simple_vars(simple: &ast::SimpleCommand) -> Vec<String> {
     vars
 }
 
-/// Variables in a redirect's expanded target, or an unquoted heredoc body. Fd
-/// numbers and process-substitution bodies expand no variables of interest here.
+/// Variables in a redirect's expanded target, or an unquoted heredoc body.
 #[allow(clippy::match_same_arms)]
 fn collect_redirect_vars(redirect: &ast::IoRedirect, vars: &mut Vec<String>) {
     use ast::IoFileRedirectTarget as T;
@@ -548,8 +543,8 @@ fn collect_extended_test_subs(expr: &ast::ExtendedTestExpr, subs: &mut Vec<Sub>)
 }
 
 /// Collects the source of every substitution in a simple command: command
-/// substitutions inside its words, and the bodies of process substitutions. Each is
-/// tagged with `parent`, the `id` of the stage this command is emitted as.
+/// substitutions in its words, the bodies of process substitutions, and anything in
+/// its redirects. Each is tagged with `parent`, the `id` of the stage it is emitted as.
 fn collect_simple_subs(simple: &ast::SimpleCommand, parent: usize, subs: &mut Vec<Sub>) {
     let prefix = simple.prefix.iter().flat_map(|p| &p.0);
     let suffix = simple.suffix.iter().flat_map(|s| &s.0);
@@ -661,7 +656,7 @@ fn param_subscript(expr: &word::ParameterExpr) -> Option<&str> {
 
 /// A parameter expansion's value and pattern words are themselves expanded, so a
 /// command or variable in one is reachable (`${x:-$(cmd)}`, `${x/$y/z}`, `${x:$n}`).
-/// `sink` handles each such word for whatever is being collected.
+/// `sink` receives each such word.
 fn collect_param_expr_words(expr: &word::ParameterExpr, mut sink: impl FnMut(&str)) {
     use word::ParameterExpr as P;
     match expr {
@@ -727,7 +722,6 @@ fn collect_param_expr_words(expr: &word::ParameterExpr, mut sink: impl FnMut(&st
 
 /// Redirect targets are expanded, so a substitution in one runs (`> $(cmd)`,
 /// `<<< "$(cmd)"`, `> >(cmd)`, or an unquoted heredoc body).
-/// Arms are grouped by redirect family for legibility, so two share a body.
 #[allow(clippy::match_same_arms)]
 fn collect_redirect_subs(redirect: &ast::IoRedirect, parent: Option<usize>, subs: &mut Vec<Sub>) {
     use ast::IoFileRedirectTarget as T;
