@@ -2,9 +2,9 @@
 
 Splits a bash command string into its individual commands so each can be inspected on its own (for example, to evaluate allow/deny rules against every command a line would actually run).
 
-It reads the raw command on stdin and writes a JSON array of pipelines on stdout. Each pipeline is an array of its stages in source order; each stage breaks the command into its `assignments`, `name`, and `args`.
+It reads the raw command on stdin and writes a JSON array of pipelines on stdout. Each pipeline is an array of its stages in source order; each stage breaks the command into its `assignments`, `name`, and `args`, plus its `redirects`, an `in_loop` flag, and the `variables` it expands. Every stage has a stable `id`, and a stage surfaced from a substitution links back to the command it was hidden in via `parent`/`children`.
 
-Output is flattened - an ordered array of arrays, regardless of nesting.
+Output is flattened - an ordered array of arrays, regardless of nesting. The `parent`/`children` ids let a caller reconstruct the nesting without giving up the flat, iterate-every-command shape.
 
 Parsing is done with [brush](https://crates.io/crates/brush-parser), a proper bash parser, so the split reflects bash's own grammar rather than ad-hoc string splitting. This is what lets it correctly handle pipelines, compound commands, and commands hidden in substitutions, expansions, and redirects.
 
@@ -15,7 +15,7 @@ echo 'ls -la' | bash-splitter
 ```
 
 ```json
-[[{ "command": "ls -la", "name": "ls", "args": ["-la"] }]]
+[[{ "id": 0, "command": "ls -la", "name": "ls", "args": ["-la"] }]]
 ```
 
 ## What it splits, and how
@@ -33,9 +33,20 @@ echo 'ls -la' | bash-splitter
 - **Substitutions in redirects**: redirect targets and bodies are expanded, so a command in one is listed too: `> $(cmd)`, here-strings (`<<< "$(cmd)"`), process-substitution targets (`> >(cmd)`), and unquoted heredoc bodies. A quoted heredoc delimiter (`<<'EOF'`) suppresses expansion and is left alone.
 - **Env assignments**: a prefix like `LD_PRELOAD=x cmd -a` is split into `assignments`, `name`, and `args` rather than flattened. A bare `FOO=bar` is listed with no `name`, since it invokes nothing.
 
+## Per-stage metadata
+
+Each stage carries a stable `id`; beyond the split words it may also carry the fields below. The optional ones are omitted when empty, so a plain command stays `{ id, command, name, args }`.
+
+- **`id`**: a stable index for the stage, unique across the whole flattened output and always present. `parent` and `children` reference it.
+- **`redirects`**: the stage's I/O redirects, in source order, so you no longer have to text-search the `command`. Each entry has the operator `op` (`>`, `>>`, `<`, `<<`, `<<<`, `>&`, `&>`, ...), an optional explicit `fd`, and a `kind` that tags the target family: `file`, `fd` (a duplication like `2>&1`), `process_sub`, `herestring`, or `heredoc`. A `file`/`fd`/`herestring`/`process_sub` carries its `target` text; a `heredoc` carries a `heredoc` object with the `delimiter`, an `expands` flag (false when the delimiter is quoted, e.g. `<<'EOF'`), and the raw `body`. Redirects hanging off a compound command (`while ...; done > log`) are not attached to a stage, but a command they hide is still surfaced.
+- **`in_loop`**: `true` when the stage runs inside a `for`/`while`/`until` loop (body or condition), so it executes once per iteration. An `if`/`case` does not count. Loop context is not tracked across a substitution boundary, so a command surfaced out of `$(...)` reports `false`.
+- **`variables`**: the parameters the stage expands (`$f`, `${x}`, `$1`, `$?`), deduped in first-seen order, gathered from its assignments, name, args, redirect targets, and expanded heredoc bodies. Quoting is respected: a single-quoted word or a quoted-delimiter heredoc contributes nothing. Command substitutions surface as their own pipelines as before; this field is only `$var`-style expansion.
+- **`parent`**: the `id` of the stage this one was surfaced from, present only on a stage that came out of a substitution. Absent means genuinely top-level, or hidden in a container that runs no command itself (a substitution in `[[ ... ]]`, or a redirect on a compound), which has no parent stage to attribute it to.
+- **`children`**: the `id`s of the stages surfaced from this stage's substitutions, in source order. Omitted when empty, so its presence doubles as the "this is a complex command, don't evaluate it in isolation" signal.
+
 ## What it excludes
 
-- **Redirects** (`> /dev/null`) are not part of argv.
+- **Redirects** are not part of `args` (they are reported separately in `redirects`).
 - The `[[ ... ]]` extended test is not emitted as a command (it runs none), but substitutions hidden in its words are included.
 
 ## Scope
@@ -59,7 +70,7 @@ echo 'echo "pie" && grep -i foo access.log | sort -u; echo done' | bash-splitter
 Actual output (one line):
 
 ```json
-[[{"command":"echo \"pie\"","name":"echo","args":["\"pie\""]}],[{"command":"grep -i foo access.log","name":"grep","args":["-i","foo","access.log"]},{"command":"sort -u","name":"sort","args":["-u"]}],[{"command":"echo done","name":"echo","args":["done"]}]]
+[[{"id":0,"command":"echo \"pie\"","name":"echo","args":["\"pie\""]}],[{"id":1,"command":"grep -i foo access.log","name":"grep","args":["-i","foo","access.log"]},{"id":2,"command":"sort -u","name":"sort","args":["-u"]}],[{"id":3,"command":"echo done","name":"echo","args":["done"]}]]
 ```
 
 Same output, pretty-printed: the outer array holds three pipelines; `echo "pie"` and `echo done` are standalone, while the middle one has two piped stages.
@@ -68,6 +79,7 @@ Same output, pretty-printed: the outer array holds three pipelines; `echo "pie"`
 [
   [
     {
+      "id": 0,
       "command": "echo \"pie\"",
       "name": "echo",
       "args": ["\"pie\""]
@@ -75,11 +87,13 @@ Same output, pretty-printed: the outer array holds three pipelines; `echo "pie"`
   ],
   [
     {
+      "id": 1,
       "command": "grep -i foo access.log",
       "name": "grep",
       "args": ["-i", "foo", "access.log"]
     },
     {
+      "id": 2,
       "command": "sort -u",
       "name": "sort",
       "args": ["-u"]
@@ -87,6 +101,7 @@ Same output, pretty-printed: the outer array holds three pipelines; `echo "pie"`
   ],
   [
     {
+      "id": 3,
       "command": "echo done",
       "name": "echo",
       "args": ["done"]
@@ -94,3 +109,61 @@ Same output, pretty-printed: the outer array holds three pipelines; `echo "pie"`
   ]
 ]
 ```
+
+## Metadata example
+
+A loop whose body redirects to a file built from variables exercises all three extra fields:
+
+```sh
+printf 'for f in *.txt; do\n  grep "$pattern" "$f" > "out/$f"\ndone\n' | bash-splitter
+```
+
+Pretty-printed: one pipeline with the single `grep` stage, flagged `in_loop`, its redirect captured, and the variables it expands listed.
+
+```json
+[
+  [
+    {
+      "id": 0,
+      "command": "grep \"$pattern\" \"$f\" > \"out/$f\"",
+      "name": "grep",
+      "args": ["\"$pattern\"", "\"$f\""],
+      "redirects": [{ "op": ">", "kind": "file", "target": "\"out/$f\"" }],
+      "in_loop": true,
+      "variables": ["pattern", "f"]
+    }
+  ]
+]
+```
+
+A heredoc keeps its body, with `expands` reflecting whether the delimiter was quoted:
+
+```json
+{
+  "id": 0,
+  "command": "cat <<EOF\nprocessing $f\nEOF\n >> log.txt",
+  "name": "cat",
+  "redirects": [
+    { "op": "<<", "kind": "heredoc", "heredoc": { "delimiter": "EOF", "expands": true, "body": "processing $f\n" } },
+    { "op": ">>", "kind": "file", "target": "log.txt" }
+  ],
+  "variables": ["f"]
+}
+```
+
+## Provenance example
+
+A command hidden in another's argument surfaces as its own pipeline, linked both ways: the `cd` claims the `echo` in `children`, and the `echo` points back via `parent`.
+
+```sh
+echo 'cd "$(echo pie)"' | bash-splitter
+```
+
+```json
+[
+  [{ "id": 0, "command": "cd \"$(echo pie)\"", "name": "cd", "args": ["\"$(echo pie)\""], "children": [1] }],
+  [{ "id": 1, "command": "echo pie", "name": "echo", "args": ["pie"], "parent": 0 }]
+]
+```
+
+Nesting chains: `cd "$(echo $(date))"` gives `date` a `parent` of `echo`'s id, which in turn has a `parent` of `cd`'s id, so the full tree reconstructs from the flat list.
