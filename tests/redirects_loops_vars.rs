@@ -116,7 +116,10 @@ fn for_loop_body_is_flagged() {
 #[test]
 fn while_condition_and_body_are_flagged() {
     let cmds = split("while read l; do echo $l; done");
-    assert!(in_loop(stage(&cmds, "read")), "condition re-runs each iteration");
+    assert!(
+        in_loop(stage(&cmds, "read")),
+        "condition re-runs each iteration"
+    );
     assert!(in_loop(stage(&cmds, "echo")));
 }
 
@@ -169,7 +172,10 @@ fn default_value_variable_is_collected() {
     let cmds = split("echo ${x:-$y}");
     let vars = variables(&cmds[0]);
     assert!(vars.contains(&"x"), "the parameter itself: {vars:?}");
-    assert!(vars.contains(&"y"), "the default-value word expands too: {vars:?}");
+    assert!(
+        vars.contains(&"y"),
+        "the default-value word expands too: {vars:?}"
+    );
 }
 
 // ---- backward compatibility ----

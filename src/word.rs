@@ -1,5 +1,5 @@
-use brush_parser::word::{self, WordPiece, WordPieceWithSource};
 use brush_parser::ParserOptions;
+use brush_parser::word::{self, WordPiece, WordPieceWithSource};
 
 use crate::params::{collect_param_expr_words, param_name, param_of, param_subscript};
 use crate::types::Sub;
@@ -51,15 +51,18 @@ pub(crate) fn collect_word_subs(word: &str, parent: Option<usize>, subs: &mut Ve
     collect_piece_subs(&pieces, parent, subs);
 }
 
-pub(crate) fn collect_piece_subs(pieces: &[WordPieceWithSource], parent: Option<usize>, subs: &mut Vec<Sub>) {
+pub(crate) fn collect_piece_subs(
+    pieces: &[WordPieceWithSource],
+    parent: Option<usize>,
+    subs: &mut Vec<Sub>,
+) {
     for piece in pieces {
         match &piece.piece {
-            WordPiece::CommandSubstitution(s) | WordPiece::BackquotedCommandSubstitution(s) => {
-                subs.push(Sub {
+            WordPiece::CommandSubstitution(s) | WordPiece::BackquotedCommandSubstitution(s) => subs
+                .push(Sub {
                     source: s.clone(),
                     parent,
-                })
-            }
+                }),
             // Substitutions can nest inside double quotes (`"$(...)"`).
             WordPiece::DoubleQuotedSequence(inner)
             | WordPiece::GettextDoubleQuotedSequence(inner) => {

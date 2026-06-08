@@ -130,7 +130,8 @@ pub fn id(cmd: &Value) -> u64 {
 
 /// The id of the stage this one surfaced from, or `None` when top-level.
 pub fn parent(cmd: &Value) -> Option<u64> {
-    cmd.get("parent").map(|v| v.as_u64().expect("parent is a number"))
+    cmd.get("parent")
+        .map(|v| v.as_u64().expect("parent is a number"))
 }
 
 /// The ids of the stages surfaced from this one's substitutions.

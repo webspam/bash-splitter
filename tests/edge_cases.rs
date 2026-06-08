@@ -29,5 +29,8 @@ use rstest::rstest;
 // Redirect hanging off a compound command: `while :; do :; done > $(cmd)`.
 #[case("while :; do :; done > $(inner10)", "inner10")]
 fn hidden_command_surfaces(#[case] input: &str, #[case] inner: &str) {
-    assert!(surfaces(input, inner), "{inner} should surface in {input:?}");
+    assert!(
+        surfaces(input, inner),
+        "{inner} should surface in {input:?}"
+    );
 }

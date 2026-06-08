@@ -31,9 +31,9 @@ pub(crate) fn param_of(expr: &word::ParameterExpr) -> Option<&word::Parameter> {
 pub(crate) fn param_name(parameter: &word::Parameter) -> String {
     use word::Parameter as P;
     match parameter {
-        P::Named(name)
-        | P::NamedWithIndex { name, .. }
-        | P::NamedWithAllIndices { name, .. } => name.clone(),
+        P::Named(name) | P::NamedWithIndex { name, .. } | P::NamedWithAllIndices { name, .. } => {
+            name.clone()
+        }
         P::Positional(n) => n.to_string(),
         P::Special(s) => s.to_string(),
     }

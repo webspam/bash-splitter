@@ -2,7 +2,9 @@ use brush_parser::ast;
 
 use crate::extended_test::collect_extended_test_subs;
 use crate::redirect::collect_redirect_list_subs;
-use crate::simple::{collect_simple_subs, prefix_assignments, simple_redirects, simple_vars, suffix_args};
+use crate::simple::{
+    collect_simple_subs, prefix_assignments, simple_redirects, simple_vars, suffix_args,
+};
 use crate::types::{Sub, Walked};
 use crate::word::collect_word_subs;
 
@@ -110,7 +112,10 @@ fn walk_compound_command(
         // The init/cond/update expressions are arithmetic, and arithmetic is
         // command-substituted (`for ((i=$(cmd); ...))`); scan them, then the body.
         C::ArithmeticForClause(f) => {
-            for expr in [&f.initializer, &f.condition, &f.updater].into_iter().flatten() {
+            for expr in [&f.initializer, &f.condition, &f.updater]
+                .into_iter()
+                .flatten()
+            {
                 collect_word_subs(&expr.value, None, subs);
             }
             walk_compound_list(&f.body.list, true, out, subs);
