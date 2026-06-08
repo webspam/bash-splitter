@@ -1,10 +1,9 @@
 use serde::Serialize;
 
-/// One command: a single stage of a pipeline.
+/// One command: a single stage of a pipeline (flat mode).
+/// All commands appear as top-level pipelines, including those surfaced from substitutions.
 #[derive(Serialize)]
 pub struct Stage {
-    /// Stable index across the whole flattened output; `parent`/`children` reference it.
-    pub(crate) id: usize,
     /// Reconstructed text of this single command.
     pub(crate) command: String,
     /// Leading env assignments (the `LD_PRELOAD=x` in `LD_PRELOAD=x cmd`, or a bare `FOO=bar`).
@@ -28,19 +27,38 @@ pub struct Stage {
     /// first-seen order. A single-quoted or quoted-heredoc reference contributes none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) variables: Vec<String>,
-    /// The `id` of the stage this one surfaced from (`cd`, for the `echo` in `cd "$(echo pie)"`).
-    /// Absent for top-level, or a substitution in a container that runs nothing (`[[ ]]`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) parent: Option<usize>,
-    /// The `id`s of the stages surfaced from this one's substitutions. Non-empty marks
-    /// a complex command whose words or redirects hide other commands.
+}
+
+/// One command: a single stage of a pipeline (nested mode). Carries the same fields
+/// as [`Stage`], plus the substitutions embedded recursively under it.
+/// Only root commands appear at the top level.
+#[derive(Serialize)]
+pub struct NestedStage {
+    #[serde(flatten)]
+    pub(crate) stage: Stage,
+    /// Pipelines surfaced from this command's substitutions. Empty means no substitutions.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) children: Vec<usize>,
+    pub(crate) substitutions: Vec<Vec<NestedStage>>,
+}
+
+impl Stage {
+    /// Builds a stage from a walked command, dropping its internal pipeline bookkeeping.
+    pub(crate) fn from_walked(cmd: &Walked) -> Self {
+        Stage {
+            command: cmd.command.clone(),
+            assignments: cmd.assignments.clone(),
+            name: cmd.name.clone(),
+            args: cmd.args.clone(),
+            redirects: cmd.redirects.clone(),
+            in_loop: cmd.in_loop,
+            variables: cmd.variables.clone(),
+        }
+    }
 }
 
 /// One I/O redirect on a command. `kind` tags the target family: `file`, `fd`,
 /// `process_sub`, `herestring`, `heredoc`.
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub(crate) struct Redirect {
     /// The explicit fd, if the source gave one (`2>` -> 2). Absent means bash's default.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -59,7 +77,7 @@ pub(crate) struct Redirect {
 }
 
 /// A heredoc body and how bash treats it.
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub(crate) struct HereDoc {
     /// The end delimiter, raw (`EOF`, `'EOF'`); quoting is reflected in `expands`.
     pub(crate) delimiter: String,

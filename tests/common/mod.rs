@@ -123,25 +123,6 @@ pub fn variables(cmd: &Value) -> Vec<&str> {
     string_array(cmd, "variables")
 }
 
-/// The stage's stable id.
-pub fn id(cmd: &Value) -> u64 {
-    cmd["id"].as_u64().expect("id is a number")
-}
-
-/// The id of the stage this one surfaced from, or `None` when top-level.
-pub fn parent(cmd: &Value) -> Option<u64> {
-    cmd.get("parent")
-        .map(|v| v.as_u64().expect("parent is a number"))
-}
-
-/// The ids of the stages surfaced from this one's substitutions.
-pub fn children(cmd: &Value) -> Vec<u64> {
-    cmd.get("children")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().map(|e| e.as_u64().expect("child id")).collect())
-        .unwrap_or_default()
-}
-
 pub fn piped_from_previous(cmd: &Value) -> bool {
     cmd["piped_from_previous"].as_bool().unwrap_or(false)
 }

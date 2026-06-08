@@ -1,0 +1,1 @@
+[[{"command":"grep foo","name":"grep","args":["foo"]},{"command":"sort -u","name":"sort","args":["-u"]},{"command":"wc -l","name":"wc","args":["-l"]}]]

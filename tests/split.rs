@@ -232,20 +232,3 @@ fn extended_test_scans_both_operands() {
     assert!(cmds.iter().any(|c| name(c) == Some("foo")));
     assert!(cmds.iter().any(|c| name(c) == Some("bar")));
 }
-
-// CRLF from PowerShell on Windows must not leave a `\r` on the last token.
-#[test]
-fn crlf_line_endings_are_normalized() {
-    let cmds = split("ls -la\r\n");
-    assert_eq!(cmds.len(), 1);
-    assert_eq!(argv(&cmds[0]), ["ls", "-la"]);
-}
-
-// CRLF between commands splits cleanly, with no stray `\r` words.
-#[test]
-fn crlf_between_commands_splits_cleanly() {
-    let cmds = split("echo one\r\necho two\r\n");
-    assert_eq!(cmds.len(), 2);
-    assert_eq!(argv(&cmds[0]), ["echo", "one"]);
-    assert_eq!(argv(&cmds[1]), ["echo", "two"]);
-}

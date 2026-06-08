@@ -1,0 +1,1 @@
+[[{"command":"grep \"$(cat pattern.txt)\" \"$f\" > \"out/$f\"","name":"grep","args":["\"$(cat pattern.txt)\"","\"$f\""],"redirects":[{"op":">","kind":"file","target":"\"out/$f\""}],"in_loop":true,"variables":["f"],"substitutions":[[{"command":"cat pattern.txt","name":"cat","args":["pattern.txt"]}]]}]]

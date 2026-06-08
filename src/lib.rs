@@ -1,7 +1,6 @@
-//! Splits a bash command into pipelines of stages, in source order. Commands inside
-//! command and process substitutions surface as their own trailing pipelines, each
-//! with a `parent` id back to the stage it came from (which lists it in `children`).
-//! This only splits; the caller evaluates rules.
+//! Splits a bash command into pipelines of stages, in source order.
+//! Two modes: flat (default) lists all commands including those from substitutions;
+//! nested embeds substitutions recursively under their parent command.
 
 mod extended_test;
 mod params;
@@ -14,8 +13,9 @@ mod word;
 
 use brush_parser::{Parser, ParserOptions};
 
-use pipeline::{expand_substitutions, group_into_pipelines};
-pub use types::Stage;
+use pipeline::{build_nested_pipelines, expand_substitutions, group_into_pipelines};
+pub use types::{NestedStage, Stage};
+use types::Walked;
 use walk::walk_compound_list;
 
 /// A parse error from the input command.
@@ -30,12 +30,29 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Splits `input` into pipelines of stages.
+/// Splits `input` into flat pipelines of stages (default mode).
+/// All commands, including those from substitutions, appear as top-level pipelines.
 ///
 /// # Errors
 ///
 /// Returns [`ParseError`] when `input` does not parse as a bash program.
 pub fn split(input: &str) -> Result<Vec<Vec<Stage>>, ParseError> {
+    let commands = walk_and_expand(input)?;
+    Ok(group_into_pipelines(&commands))
+}
+
+/// Splits `input` into nested pipelines of stages.
+/// Only root commands appear at the top level; substitutions are embedded recursively.
+///
+/// # Errors
+///
+/// Returns [`ParseError`] when `input` does not parse as a bash program.
+pub fn split_nested(input: &str) -> Result<Vec<Vec<NestedStage>>, ParseError> {
+    let commands = walk_and_expand(input)?;
+    Ok(build_nested_pipelines(&commands))
+}
+
+fn walk_and_expand(input: &str) -> Result<Vec<Walked>, ParseError> {
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
     let program = parser
         .parse_program()
@@ -58,5 +75,5 @@ pub fn split(input: &str) -> Result<Vec<Vec<Stage>>, ParseError> {
         commands[parent].children.push(child);
     }
 
-    Ok(group_into_pipelines(commands))
+    Ok(commands)
 }

@@ -1,0 +1,1 @@
+[[{"command":"echo \"$(whoami)\" \"$(hostname)\"","name":"echo","args":["\"$(whoami)\"","\"$(hostname)\""]}],[{"command":"whoami","name":"whoami"}],[{"command":"hostname","name":"hostname"}]]

@@ -1,6 +1,6 @@
 use brush_parser::{Parser, ParserOptions};
 
-use crate::types::{Stage, Sub, Walked};
+use crate::types::{NestedStage, Stage, Sub, Walked};
 use crate::walk::walk_compound_list;
 
 /// Appends each substitution's commands after the walked ones, level by level so
@@ -34,27 +34,57 @@ fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<Sub>) {
     }
 }
 
-/// Buckets the flat walk order into pipelines: a command that reads an upstream
-/// pipe continues the current pipeline; any other command starts a new one.
-pub(crate) fn group_into_pipelines(commands: Vec<Walked>) -> Vec<Vec<Stage>> {
+/// Buckets the flat walk order into pipelines (flat mode): a command that reads an
+/// upstream pipe continues the current pipeline; any other command starts a new one.
+pub(crate) fn group_into_pipelines(commands: &[Walked]) -> Vec<Vec<Stage>> {
     let mut pipelines: Vec<Vec<Stage>> = Vec::new();
-    for (id, cmd) in commands.into_iter().enumerate() {
-        let stage = Stage {
-            id,
-            command: cmd.command,
-            assignments: cmd.assignments,
-            name: cmd.name,
-            args: cmd.args,
-            redirects: cmd.redirects,
-            in_loop: cmd.in_loop,
-            variables: cmd.variables,
-            parent: cmd.parent,
-            children: cmd.children,
-        };
+    for cmd in commands {
+        let stage = Stage::from_walked(cmd);
         match pipelines.last_mut() {
             Some(current) if cmd.piped_from_previous => current.push(stage),
             _ => pipelines.push(vec![stage]),
         }
     }
     pipelines
+}
+
+/// Builds nested pipelines (nested mode): only root commands at the top level,
+/// substitutions embedded recursively under their parent command.
+pub(crate) fn build_nested_pipelines(commands: &[Walked]) -> Vec<Vec<NestedStage>> {
+    let mut pipelines: Vec<Vec<NestedStage>> = Vec::new();
+
+    for (idx, cmd) in commands.iter().enumerate() {
+        // A command with a parent is embedded under it, not surfaced at the top level.
+        if cmd.parent.is_some() {
+            continue;
+        }
+
+        let stage = build_nested_stage(idx, commands);
+        match pipelines.last_mut() {
+            Some(current) if cmd.piped_from_previous => current.push(stage),
+            _ => pipelines.push(vec![stage]),
+        }
+    }
+
+    pipelines
+}
+
+/// Recursively builds a nested stage from its index, grouping its substitutions into
+/// sub-pipelines by their own pipe flags.
+fn build_nested_stage(idx: usize, commands: &[Walked]) -> NestedStage {
+    let cmd = &commands[idx];
+
+    let mut substitutions: Vec<Vec<NestedStage>> = Vec::new();
+    for &child_idx in &cmd.children {
+        let child_stage = build_nested_stage(child_idx, commands);
+        match substitutions.last_mut() {
+            Some(current) if commands[child_idx].piped_from_previous => current.push(child_stage),
+            _ => substitutions.push(vec![child_stage]),
+        }
+    }
+
+    NestedStage {
+        stage: Stage::from_walked(cmd),
+        substitutions,
+    }
 }

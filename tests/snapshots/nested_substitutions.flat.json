@@ -1,0 +1,1 @@
+[[{"command":"echo $(foo $(bar))","name":"echo","args":["$(foo $(bar))"]}],[{"command":"foo $(bar)","name":"foo","args":["$(bar)"]}],[{"command":"bar","name":"bar"}]]
