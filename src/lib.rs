@@ -14,8 +14,8 @@ mod word;
 use brush_parser::{Parser, ParserOptions};
 
 use pipeline::{build_nested_pipelines, expand_substitutions, group_into_pipelines};
-pub use types::{NestedStage, Stage};
 use types::Walked;
+pub use types::{NestedStage, Stage};
 use walk::walk_compound_list;
 
 /// A parse error from the input command.

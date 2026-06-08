@@ -31,7 +31,11 @@ fn test_snapshot(name: &str) {
         let expected = fs::read_to_string(&nested_path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", nested_path.display()));
         let actual = run_nested(&input);
-        assert_eq!(actual, expected, "nested mode snapshot mismatch for {}", name);
+        assert_eq!(
+            actual, expected,
+            "nested mode snapshot mismatch for {}",
+            name
+        );
     }
 }
 

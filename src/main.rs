@@ -17,7 +17,9 @@ fn main() {
 
     let json = if nested {
         match split_nested(&input) {
-            Ok(pipelines) => serde_json::to_string(&pipelines).expect("NestedStage is always serializable"),
+            Ok(pipelines) => {
+                serde_json::to_string(&pipelines).expect("NestedStage is always serializable")
+            }
             Err(e) => {
                 eprintln!("bash-splitter: parse error: {e}");
                 std::process::exit(2);
@@ -25,7 +27,9 @@ fn main() {
         }
     } else {
         match split(&input) {
-            Ok(pipelines) => serde_json::to_string(&pipelines).expect("Stage is always serializable"),
+            Ok(pipelines) => {
+                serde_json::to_string(&pipelines).expect("Stage is always serializable")
+            }
             Err(e) => {
                 eprintln!("bash-splitter: parse error: {e}");
                 std::process::exit(2);
