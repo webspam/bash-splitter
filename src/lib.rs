@@ -30,7 +30,11 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Splits `input` into pipelines of stages. Returns an error when the input does not parse.
+/// Splits `input` into pipelines of stages.
+///
+/// # Errors
+///
+/// Returns [`ParseError`] when `input` does not parse as a bash program.
 pub fn split(input: &str) -> Result<Vec<Vec<Stage>>, ParseError> {
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
     let program = parser
