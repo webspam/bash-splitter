@@ -1,7 +1,7 @@
-//! Splits a bash command (on stdin) into pipelines, as a JSON array of stage arrays
-//! in source order. Commands inside command and process substitutions surface as
-//! their own trailing pipelines, each with a `parent` id back to the stage it came
-//! from (which lists it in `children`). This only splits; the caller evaluates rules.
+//! Splits a bash command into pipelines of stages, in source order. Commands inside
+//! command and process substitutions surface as their own trailing pipelines, each
+//! with a `parent` id back to the stage it came from (which lists it in `children`).
+//! This only splits; the caller evaluates rules.
 
 mod extended_test;
 mod params;

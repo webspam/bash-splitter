@@ -1,7 +1,7 @@
 use brush_parser::ast;
 
 use crate::types::{HereDoc, Redirect, Sub};
-use crate::word::collect_word_subs;
+use crate::word::{collect_word_subs, collect_word_vars};
 
 /// Structures one redirect for output.
 pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
@@ -55,7 +55,6 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
 pub(crate) fn collect_redirect_vars(redirect: &ast::IoRedirect, vars: &mut Vec<String>) {
     use ast::IoFileRedirectTarget as T;
     use ast::IoRedirect as R;
-    use crate::word::collect_word_vars;
     match redirect {
         R::File(_, _, T::Filename(w) | T::Duplicate(w)) => collect_word_vars(&w.value, vars),
         R::File(_, _, T::Fd(_) | T::ProcessSubstitution(_, _)) => {}

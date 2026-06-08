@@ -1,3 +1,6 @@
+//! Reads a bash command on stdin and writes its split pipelines to stdout as a JSON
+//! array of stage arrays. The splitting itself lives in the library.
+
 use std::io::{Read, Write};
 
 use bash_splitter::split;
