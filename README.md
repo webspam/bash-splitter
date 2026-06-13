@@ -27,7 +27,7 @@ All other metadata is the same in either mode.
 
 Parsing uses [brush](https://crates.io/crates/brush-parser), a proper bash parser.
 
-That lets bash-splitter descend into every construct: pipelines, sequences, lists, compound commands (`for`/`while`/`if`/`case`/functions/subshells), groupings, commands hidden in substitutions, expansions, and redirects. See the [coverage reference](docs/reference/coverage.md) for the full table.
+That lets bash-splitter descend into every construct: pipelines, sequences, control flow, commands hidden in substitutions, and several others. See the [coverage reference](docs/reference/coverage.md) for the full table.
 
 ## Optional fields
 
