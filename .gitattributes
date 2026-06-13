@@ -1,0 +1,2 @@
+# Ensure homogeneous line endings for all .sh files (fixtures)
+*.sh text eol=lf
