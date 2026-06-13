@@ -89,7 +89,7 @@ jobs:
   # Single required check: always runs, so requiring it can't deadlock on a
   # skipped matrix job. Green if lint and tests passed or validly skipped, red otherwise.
   ci:
-    name: CI Gate
+    name: All checks passed
     needs: [changes, lint, test]
     if: always()
     runs-on: ubuntu-latest
