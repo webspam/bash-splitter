@@ -56,7 +56,10 @@ use rstest::rstest;
 // Substitution nested inside a process substitution's body.
 #[case("diff <(echo $(inner25)) x", "inner25")]
 fn hidden_command_surfaces(#[case] input: &str, #[case] inner: &str) {
-    assert!(surfaces(input, inner), "{inner} should surface in {input:?}");
+    assert!(
+        surfaces(input, inner),
+        "{inner} should surface in {input:?}"
+    );
 }
 
 // Two heredocs on one command: both bodies expand.

@@ -1,0 +1,1 @@
+[[{"command":"echo \"start\"","name":"echo","args":["\"start\""]}],[{"command":"echo \"middle\"","name":"echo","args":["\"middle\""]}],[{"command":"echo \"end\"","name":"echo","args":["\"end\""]}]]

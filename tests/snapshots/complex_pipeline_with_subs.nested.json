@@ -1,0 +1,1 @@
+[[{"command":"cd \"$(echo pie)\"","name":"cd","args":["\"$(echo pie)\""],"substitutions":[[{"command":"echo pie","name":"echo","args":["pie"]}]]}],[{"command":"cat \"$(grep x)\"","name":"cat","args":["\"$(grep x)\""],"substitutions":[[{"command":"grep x","name":"grep","args":["x"]}]]},{"command":"sort -u","name":"sort","args":["-u"]}]]

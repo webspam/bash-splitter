@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
-# A deliberately abhorrent script used as a parser/splitter stress test. It mixes
-# things that DO get split (top-level pipelines, subshells, brace groups) with a
-# monstrous control-flow block that is emitted whole: nested for/while/until,
-# if/elif/else, both [ ] and [[ ]] tests, case, backticks nested inside $(...),
-# arithmetic expansion, process substitution, prefix assignments, redirects, and
-# a backgrounded job.
+# A deliberately abhorrent parser/splitter stress fixture.
 
-# --- top-level pipelines: these get split into individual commands ---
+# top-level pipelines
 LD_PRELOAD=./evil.so grep -E "`whoami`-$(id -un)" /var/log/sys.log | (sort -u) | wc -l > counts.txt
 
 ( echo "start $(date +%s)"; cat `ls *.cfg` ) | tee combined.log | gzip -9 > combined.gz
 
 producer | { read -r first; echo "$first" | tr a-z A-Z; } | cat -n
 
-# --- the monster: one control-flow command, emitted whole ---
+# one large control-flow command
 for d in `find . -type d` $(ls -d /tmp/*/); do
     if [ -n "$d" ] && [[ "$d" =~ ^/.*$ ]]; then
         while read -r line; do

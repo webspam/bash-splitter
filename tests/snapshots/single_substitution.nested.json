@@ -1,0 +1,1 @@
+[[{"command":"cd \"$(echo pie)\"","name":"cd","args":["\"$(echo pie)\""],"substitutions":[[{"command":"echo pie","name":"echo","args":["pie"]}]]}]]

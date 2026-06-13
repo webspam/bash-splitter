@@ -106,6 +106,23 @@ pub fn surfaces(input: &str, inner: &str) -> bool {
     split(input).iter().any(|c| name(c) == Some(inner))
 }
 
+/// The command's redirects (empty when the field is absent).
+pub fn redirects(cmd: &Value) -> &[Value] {
+    cmd.get("redirects")
+        .and_then(Value::as_array)
+        .map_or(&[], Vec::as_slice)
+}
+
+/// Whether the command is flagged as running inside a loop.
+pub fn in_loop(cmd: &Value) -> bool {
+    cmd.get("in_loop").and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// The names of the parameters the command expands.
+pub fn variables(cmd: &Value) -> Vec<&str> {
+    string_array(cmd, "variables")
+}
+
 pub fn piped_from_previous(cmd: &Value) -> bool {
     cmd["piped_from_previous"].as_bool().unwrap_or(false)
 }

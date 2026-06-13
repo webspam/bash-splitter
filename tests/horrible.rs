@@ -1,6 +1,6 @@
 //! Runs the abhorrent fixture (tests/fixtures/horrible.sh) through the splitter to
-//! verify the nasty constructs all survive: nested control flow, backticks inside
-//! $(...), prefix assignments, subshell/brace-group pipeline stages, redirects,
+//! verify the nasty constructs all survive: nested control flow, `$(...)` nested in
+//! backticks, prefix assignments, subshell/brace-group pipeline stages, redirects,
 //! process substitution, and arithmetic expansion.
 
 mod common;
