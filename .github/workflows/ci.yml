@@ -5,18 +5,48 @@ on:
     branches: ["master"]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  # Skip tests only when every changed file is CI-irrelevant
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      run: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          # `relevant` is true if any changed file is outside the ignore set.
+          predicate-quantifier: every
+          filters: |
+            relevant:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE*'
+              - '!.gitignore'
+              - '!.github/workflows/release.yml'
+
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -24,13 +54,59 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - uses: taiki-e/install-action@bafb217ce243dd135aa0204d91238f387d005863 # just
+
+      - name: Fetch dependencies (locked)
+        run: cargo fetch --locked
+
       - name: Format
-        run: cargo fmt --all --check
+        run: just fmt
 
       - name: Clippy
-        run: cargo clippy --all-targets
+        run: just clippy
+
+  test:
+    name: Test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
 
       - uses: taiki-e/install-action@2a864fa5714510ad0573d2f22ecd17bce6156699 # nextest
+      - uses: taiki-e/install-action@bafb217ce243dd135aa0204d91238f387d005863 # just
 
       - name: Test
-        run: cargo nextest run --locked
+        run: just test
+
+  # Single required check: always runs, so requiring it can't deadlock on a
+  # skipped matrix job. Green if lint and tests passed or validly skipped, red otherwise.
+  ci:
+    name: All checks passed
+    needs: [changes, lint, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          LINT: ${{ needs.lint.result }}
+          TESTS: ${{ needs.test.result }}
+        run: |
+          echo "changes=$CHANGES lint=$LINT test=$TESTS"
+          # Trust a skip only when detection itself succeeded.
+          [ "$CHANGES" = "success" ] || { echo "::error::change detection $CHANGES"; exit 1; }
+          for job in lint:"$LINT" test:"$TESTS"; do
+            case "${job#*:}" in
+              success | skipped) ;;
+              *) echo "::error::${job%%:*} ${job#*:}"; exit 1 ;;
+            esac
+          done
