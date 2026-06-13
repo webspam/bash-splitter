@@ -1,19 +1,6 @@
 # bash-splitter
 
-Splits a bash command string into its individual commands so each can be inspected on its own (for example, to evaluate allow/deny rules against every command a line would actually run).
-
-It reads the raw command on stdin and writes a JSON array of pipelines on stdout. Each pipeline is an array of its stages in source order; each stage breaks the command into its `assignments`, `name`, and `args`, plus its `redirects`, an `in_loop` flag, and the `variables` it expands.
-
-Parsing is done with [brush](https://crates.io/crates/brush-parser), a proper bash parser, so the split reflects bash's own grammar rather than ad-hoc string splitting. This is what lets it correctly handle pipelines, compound commands, and commands hidden in substitutions, expansions, and redirects.
-
-## Two modes
-
-The tool answers two different questions, one per mode:
-
-- **Flat (default)**: every command, nested or not, listed as a top-level pipeline. Use this to check each command a line would run against a filter, without caring where it came from.
-- **Nested (`-n` / `--nested`)**: only root commands at the top level; a command hidden in a substitution is embedded under the stage it came from, in `substitutions`. Use this to tell a genuine top-level command apart from one that only runs inside an expansion.
-
-Both modes carry the same per-stage metadata. Only nested mode shows the tree; flat mode never does.
+Splits a bash command string into its individual commands, so each can be inspected on its own (for example, against allow/deny rules).
 
 ## Simple example
 
@@ -25,29 +12,31 @@ echo 'ls -la' | bash-splitter
 [[{ "command": "ls -la", "name": "ls", "args": ["-la"] }]]
 ```
 
-## What it splits, and how
+## Output
 
-- **Pipelines** (`a | b | c`): each stage becomes a separate command. This is represented as a JSON array, with the leftmost command being index 0 (`a`).
-- **Sequences and lists** (`a; b`, `a && b`, `a || b`): each command is listed separately, as its own pipeline.
-- **Logical boundaries**: a command reading an upstream pipe continues the current pipeline; any other command starts a new one. Groupings keep this correct, so `(echo a; echo b) | foo` splits at the group's internal `;` (only the group's last command joins the downstream stage).
-- **Groupings as pipeline stages** (`foo | (grep x)`, `foo | { a | b; }`): the parser descends into subshells and brace groups so inner commands are listed individually, while the group's first command still inherits the upstream pipe.
-- **Compound commands**: `for`, `while`, `until`, `if`, `case`, function bodies, coprocesses, and subshells are never emitted whole. Their bodies and conditions are inspected so every nested command is listed (including the command used as an `if`/`while` condition).
-- **Command substitutions** (`echo $(rm -rf /)`, backquotes): the hidden command still runs, so it is surfaced too. In flat mode it is its own trailing pipeline; in nested mode it is embedded in the parent's `substitutions`. Substitutions inside double quotes are included.
-- **Process substitutions** (`diff <(sort a) <(sort b)`): the inner commands are surfaced too.
-- **Substitutions inside `[[ ... ]]`** (`[[ -n $(cmd) ]]`): the test runs no command itself, but a substitution in its words still runs, so it is surfaced.
-- **Nested substitutions** (`echo $(foo $(bar))`): every level is surfaced.
-- **Substitutions in word expansions**: a command hidden in a parameter expansion's value or pattern (`${x:-$(cmd)}`, `${x/$(cmd)/y}`) or in an arithmetic expansion (`$(( $(cmd) ))`) is surfaced.
-- **Substitutions in redirects**: redirect targets and bodies are expanded, so a command in one is surfaced too: `> $(cmd)`, here-strings (`<<< "$(cmd)"`), process-substitution targets (`> >(cmd)`), and unquoted heredoc bodies. A quoted heredoc delimiter (`<<'EOF'`) suppresses expansion and is left alone.
-- **Env assignments**: a prefix like `LD_PRELOAD=x cmd -a` is split into `assignments`, `name`, and `args` rather than flattened. A bare `FOO=bar` is listed with no `name`, since it invokes nothing.
+Reads the raw command on stdin and writes a JSON array of pipelines on stdout, in source order. Each pipeline is an array of stages, and each stage splits a command into its `assignments`, `name`, and `args`, plus optional [per-stage metadata](#per-stage-metadata).
 
-## Per-stage metadata
+## Two modes
 
-Beyond the split words, a stage may carry the fields below. The optional ones are omitted when empty, so a plain command stays `{ command, name, args }`.
+- **Flat (default)**: every command, nested or not, listed as a top-level pipeline. Use this to check each command a line would run against a filter, without caring where it came from.
+- **Nested (`-n` / `--nested`)**: only root commands at the top level; a command hidden in a substitution is embedded under the stage it came from, in `substitutions`. Use this to tell a genuine top-level command apart from one that only runs inside an expansion.
 
-- **`redirects`**: the stage's I/O redirects, in source order, so you no longer have to text-search the `command`. Each entry has the operator `op` (`>`, `>>`, `<`, `<<`, `<<<`, `>&`, `&>`, ...), an optional explicit `fd`, and a `kind` that tags the target family: `file`, `fd` (a duplication like `2>&1`), `process_sub`, `herestring`, or `heredoc`. A `file`/`fd`/`herestring`/`process_sub` carries its `target` text; a `heredoc` carries a `heredoc` object with the `delimiter`, an `expands` flag (false when the delimiter is quoted, e.g. `<<'EOF'`), and the raw `body`. Redirects hanging off a compound command (`while ...; done > log`) are not attached to a stage, but a command they hide is still surfaced.
-- **`in_loop`**: `true` when the stage runs inside a `for`/`while`/`until` loop (body or condition), so it executes once per iteration. An `if`/`case` does not count. Loop context is not tracked across a substitution boundary, so a command surfaced out of `$(...)` reports `false`.
-- **`variables`**: the parameters the stage expands (`$f`, `${x}`, `$1`, `$?`), deduped in first-seen order, gathered from its assignments, name, args, redirect targets, and expanded heredoc bodies. Quoting is respected: a single-quoted word or a quoted-delimiter heredoc contributes nothing. Command substitutions are surfaced separately (see the modes above); this field is only `$var`-style expansion.
-- **`substitutions`** (nested mode only): the pipelines surfaced from this stage's substitutions, in source order, each embedded recursively. Omitted when empty, so its presence doubles as the "this is a complex command, don't evaluate it in isolation" signal.
+All other metadata is the same in either mode.
+
+## Coverage
+
+Parsing uses [brush](https://crates.io/crates/brush-parser), a proper bash parser.
+
+That lets bash-splitter descend into every construct: pipelines, sequences, control flow, commands hidden in substitutions, and several others. See the [coverage reference](docs/reference/coverage.md) for the full table.
+
+## Optional fields
+
+Omitted when empty / false.
+
+- **`substitutions`** (`--nested` only): recursive tree of all substituted commands / pipelines.
+- **`redirects`**: I/O redirects (e.g. `>`), in source order. See the [redirects reference](docs/reference/redirects.md).
+- **`in_loop`**: `true` when the stage runs inside a `for`/`while`/`until` loop (caveat: any substitutions in the loop **will not** have this flag set, but in nested mode the parent(s) can be checked).
+- **`variables`**: all `$var`-style parameters the stage will expand when executed (`$f`, `${x}`, `$1`, `$?`), deduped in first-seen order.
 
 ## What it excludes
 
