@@ -1,2 +1,3 @@
-# Ensure homogeneous line endings for all .sh files (fixtures)
+# Ensure homogeneous line endings for fixtures and snapshots
 *.sh text eol=lf
+*.json text eol=lf
