@@ -25,20 +25,9 @@ echo 'ls -la' | bash-splitter
 [[{ "command": "ls -la", "name": "ls", "args": ["-la"] }]]
 ```
 
-## What it splits, and how
+## Coverage
 
-- **Pipelines** (`a | b | c`): each stage becomes a separate command. This is represented as a JSON array, with the leftmost command being index 0 (`a`).
-- **Sequences and lists** (`a; b`, `a && b`, `a || b`): each command is listed separately, as its own pipeline.
-- **Logical boundaries**: a command reading an upstream pipe continues the current pipeline; any other command starts a new one. Groupings keep this correct, so `(echo a; echo b) | foo` splits at the group's internal `;` (only the group's last command joins the downstream stage).
-- **Groupings as pipeline stages** (`foo | (grep x)`, `foo | { a | b; }`): the parser descends into subshells and brace groups so inner commands are listed individually, while the group's first command still inherits the upstream pipe.
-- **Compound commands**: `for`, `while`, `until`, `if`, `case`, function bodies, coprocesses, and subshells are never emitted whole. Their bodies and conditions are inspected so every nested command is listed (including the command used as an `if`/`while` condition).
-- **Command substitutions** (`echo $(rm -rf /)`, backquotes): the hidden command still runs, so it is surfaced too. In flat mode it is its own trailing pipeline; in nested mode it is embedded in the parent's `substitutions`. Substitutions inside double quotes are included.
-- **Process substitutions** (`diff <(sort a) <(sort b)`): the inner commands are surfaced too.
-- **Substitutions inside `[[ ... ]]`** (`[[ -n $(cmd) ]]`): the test runs no command itself, but a substitution in its words still runs, so it is surfaced.
-- **Nested substitutions** (`echo $(foo $(bar))`): every level is surfaced.
-- **Substitutions in word expansions**: a command hidden in a parameter expansion's value or pattern (`${x:-$(cmd)}`, `${x/$(cmd)/y}`) or in an arithmetic expansion (`$(( $(cmd) ))`) is surfaced.
-- **Substitutions in redirects**: redirect targets and bodies are expanded, so a command in one is surfaced too: `> $(cmd)`, here-strings (`<<< "$(cmd)"`), process-substitution targets (`> >(cmd)`), and unquoted heredoc bodies. A quoted heredoc delimiter (`<<'EOF'`) suppresses expansion and is left alone.
-- **Env assignments**: a prefix like `LD_PRELOAD=x cmd -a` is split into `assignments`, `name`, and `args` rather than flattened. A bare `FOO=bar` is listed with no `name`, since it invokes nothing.
+bash-splitter descends into every bash construct: pipelines, sequences and lists, compound commands (`for`/`while`/`if`/`case`/functions/subshells), groupings, and commands hidden in substitutions, expansions, and redirects. See the [coverage reference](docs/reference/coverage.md) for the construct-by-construct table.
 
 ## Per-stage metadata
 
