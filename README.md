@@ -33,10 +33,12 @@ That lets bash-splitter descend into every construct: pipelines, sequences, list
 
 ## Optional fields
 
+Omitted when empty / false.
+
+- **`substitutions`** (`--nested` only): recursive tree of all substituted commands / pipelines.
 - **`redirects`**: I/O redirects (e.g. `>`), in source order. See the [redirects reference](docs/reference/redirects.md).
 - **`in_loop`**: `true` when the stage runs inside a `for`/`while`/`until` loop (caveat: any substitutions in the loop **will not** have this flag set, but in nested mode the parent(s) can be checked).
 - **`variables`**: all `$var`-style parameters the stage will expand when executed (`$f`, `${x}`, `$1`, `$?`), deduped in first-seen order.
-- **`substitutions`** (nested mode only): the pipelines surfaced from this stage's substitutions, embedded recursively. Its presence flags a complex command not to evaluate in isolation.
 
 ## What it excludes
 
