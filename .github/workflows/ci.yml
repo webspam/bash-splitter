@@ -5,13 +5,41 @@ on:
     branches: ["master"]
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  # Skip tests only when every changed file is CI-irrelevant
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          # `relevant` is true if any changed file is outside the ignore set.
+          predicate-quantifier: every
+          filters: |
+            relevant:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE*'
+              - '!.gitignore'
+              - '!.github/workflows/release.yml'
+
   test:
     name: Test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -34,3 +62,24 @@ jobs:
 
       - name: Test
         run: cargo nextest run --locked
+
+  # Single required check: always runs, so requiring it can't deadlock on a
+  # skipped matrix job. Green if tests passed or validly skipped, red otherwise.
+  ci:
+    name: CI Gate
+    needs: [changes, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          TESTS: ${{ needs.test.result }}
+        run: |
+          echo "changes=$CHANGES test=$TESTS"
+          # Trust a skip only when detection itself succeeded.
+          [ "$CHANGES" = "success" ] || { echo "::error::change detection $CHANGES"; exit 1; }
+          case "$TESTS" in
+            success | skipped) ;;
+            *) echo "::error::tests $TESTS"; exit 1 ;;
+          esac
