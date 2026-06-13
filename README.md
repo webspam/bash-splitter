@@ -18,16 +18,14 @@ Reads the raw command on stdin and writes a JSON array of pipelines on stdout, i
 
 ## Two modes
 
-The tool answers two different questions, one per mode:
-
 - **Flat (default)**: every command, nested or not, listed as a top-level pipeline. Use this to check each command a line would run against a filter, without caring where it came from.
 - **Nested (`-n` / `--nested`)**: only root commands at the top level; a command hidden in a substitution is embedded under the stage it came from, in `substitutions`. Use this to tell a genuine top-level command apart from one that only runs inside an expansion.
 
-Both modes carry the same per-stage metadata.
+All other metadata is the same in either mode.
 
 ## Coverage
 
-Parsing uses [brush](https://crates.io/crates/brush-parser), a real bash parser, so the split follows bash's own grammar rather than string matching.
+Parsing uses [brush](https://crates.io/crates/brush-parser), a proper bash parser.
 
 That lets bash-splitter descend into every construct: pipelines, sequences, lists, compound commands (`for`/`while`/`if`/`case`/functions/subshells), groupings, commands hidden in substitutions, expansions, and redirects. See the [coverage reference](docs/reference/coverage.md) for the full table.
 
