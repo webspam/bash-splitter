@@ -7,10 +7,6 @@ on:
         description: "Title (defaults to tag)"
         required: false
         type: string
-      summary:
-        description: "Summary (appears above auto-generated notes)"
-        required: false
-        type: string
       prerelease:
         description: "Mark as pre-release"
         required: false
@@ -35,8 +31,25 @@ jobs:
       - name: Read version from Cargo.toml
         id: version
         run: |
-          tag="v$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)".*/\1/')"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          version="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)".*/\1/')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      # Slice the matching `## <version>` section out of CHANGELOG.md; it is the release notes.
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          awk -v ver="$VERSION" '
+            $0 == "## " ver { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ] || ! grep -q '[^[:space:]]' notes.md; then
+            echo "No '## $VERSION' section found in CHANGELOG.md (or it is empty)." >&2
+            exit 1
+          fi
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
 
       - name: Create draft release
         run: |
@@ -46,21 +59,17 @@ jobs:
 
           args=()
           [ "${{ inputs.prerelease }}" = "true" ] && args+=(--prerelease)
-          if [ -n "$RELEASE_SUMMARY" ]; then
-            printf '%s' "$RELEASE_SUMMARY" > summary.md
-            args+=(--notes-file summary.md)
-          fi
 
           # Reuse an existing draft for this tag if a previous run already made one.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; reusing it."
           else
-            gh release create "$TAG" --title "$title" --draft "${args[@]}" --generate-notes
+            gh release create "$TAG" --title "$title" --draft \
+              --notes-file notes.md --generate-notes "${args[@]}"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
-          RELEASE_SUMMARY: ${{ inputs.summary }}
 
   build:
     needs: create-release
