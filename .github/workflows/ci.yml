@@ -55,6 +55,9 @@ jobs:
       - uses: taiki-e/install-action@2a864fa5714510ad0573d2f22ecd17bce6156699 # nextest
       - uses: taiki-e/install-action@bafb217ce243dd135aa0204d91238f387d005863 # just
 
+      - name: Fetch dependencies (locked)
+        run: cargo fetch --locked
+
       - name: Format
         run: just fmt
 
