@@ -36,6 +36,29 @@ jobs:
               - '!.gitignore'
               - '!.github/workflows/release.yml'
 
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          components: rustfmt, clippy
+
+      - uses: taiki-e/install-action@bafb217ce243dd135aa0204d91238f387d005863 # just
+
+      - name: Fetch dependencies (locked)
+        run: cargo fetch --locked
+
+      - name: Format
+        run: just fmt
+
+      - name: Clippy
+        run: just clippy
+
   test:
     name: Test (${{ matrix.os }})
     needs: changes
@@ -49,41 +72,33 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
-        with:
-          components: rustfmt, clippy
 
       - uses: taiki-e/install-action@2a864fa5714510ad0573d2f22ecd17bce6156699 # nextest
       - uses: taiki-e/install-action@bafb217ce243dd135aa0204d91238f387d005863 # just
-
-      - name: Fetch dependencies (locked)
-        run: cargo fetch --locked
-
-      - name: Format
-        run: just fmt
-
-      - name: Clippy
-        run: just clippy
 
       - name: Test
         run: just test
 
   # Single required check: always runs, so requiring it can't deadlock on a
-  # skipped matrix job. Green if tests passed or validly skipped, red otherwise.
+  # skipped matrix job. Green if lint and tests passed or validly skipped, red otherwise.
   ci:
     name: CI Gate
-    needs: [changes, test]
+    needs: [changes, lint, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         env:
           CHANGES: ${{ needs.changes.result }}
+          LINT: ${{ needs.lint.result }}
           TESTS: ${{ needs.test.result }}
         run: |
-          echo "changes=$CHANGES test=$TESTS"
+          echo "changes=$CHANGES lint=$LINT test=$TESTS"
           # Trust a skip only when detection itself succeeded.
           [ "$CHANGES" = "success" ] || { echo "::error::change detection $CHANGES"; exit 1; }
-          case "$TESTS" in
-            success | skipped) ;;
-            *) echo "::error::tests $TESTS"; exit 1 ;;
-          esac
+          for job in lint:"$LINT" test:"$TESTS"; do
+            case "${job#*:}" in
+              success | skipped) ;;
+              *) echo "::error::${job%%:*} ${job#*:}"; exit 1 ;;
+            esac
+          done
