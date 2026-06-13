@@ -52,16 +52,17 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - uses: taiki-e/install-action@2a864fa5714510ad0573d2f22ecd17bce6156699 # nextest
+      - uses: taiki-e/install-action@bafb217ce243dd135aa0204d91238f387d005863 # just
+
       - name: Format
-        run: cargo fmt --all --check
+        run: just fmt
 
       - name: Clippy
-        run: cargo clippy --all-targets
-
-      - uses: taiki-e/install-action@2a864fa5714510ad0573d2f22ecd17bce6156699 # nextest
+        run: just clippy
 
       - name: Test
-        run: cargo nextest run --locked
+        run: just test
 
   # Single required check: always runs, so requiring it can't deadlock on a
   # skipped matrix job. Green if tests passed or validly skipped, red otherwise.
