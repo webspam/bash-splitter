@@ -29,3 +29,18 @@ A command hidden inside an expansion still runs, so it is surfaced too: in flat 
 | Redirect             | `> $(cmd)`, `<<< "$(cmd)"`, `> >(cmd)`, unquoted heredoc body | Targets and bodies are expanded. A quoted delimiter (`<<'EOF'`) suppresses expansion and is left alone. |
 
 A substitution with no owning stage (one in `[[ ... ]]`, or in a redirect on a compound command) has no parent to embed under, so it surfaces as a top-level pipeline in both modes.
+
+## Static loop expansion
+
+A `for` loop over plain literal values is unrolled into its individual commands, so `for f in a b c; do echo $f; done` splits as `echo a`, `echo b`, `echo c` rather than one `echo $f` body. This is on by default; pass `-E` / `--no-expand` to keep the loop as a single body.
+
+Only fully-static loops qualify; anything needing real expansion or guesswork is left as one body.
+
+| Case                       | Example                                  | Behaviour                                                                            |
+| -------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------ |
+| Plain literals             | `for f in a b c`                         | Unrolled; each `$f` / `${f}` in the body is substituted (respecting quotes).         |
+| Nested static loops        | `for a in x; do for b in y z; ...`       | Compose; both variables are substituted.                                             |
+| Non-literal values         | `for f in *.txt`, `$(ls)`, `$x`, `"a b"` | Left as one body; a glob, expansion, quote, or brace is not evaluated.               |
+| Reassigned loop variable   | `for f in a b; do f=x; ...`              | Left as one body; a `$f`-rebinding body (`f=`, `read f`, `(( ))`, nested `for f`) is not unrolled. |
+
+Substitution only reaches the body's own words; a `$f` inside a command substitution (`$(grep $f)`) is left for that surfaced command, matching how loop context is otherwise not tracked across substitution boundaries.

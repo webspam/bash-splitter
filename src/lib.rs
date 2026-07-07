@@ -2,6 +2,7 @@
 //! Two modes: flat (default) lists all commands including those from substitutions;
 //! nested embeds substitutions recursively under their parent command.
 
+mod expand;
 mod extended_test;
 mod params;
 mod pipeline;
@@ -33,26 +34,30 @@ impl std::error::Error for ParseError {}
 /// Splits `input` into flat pipelines of stages (default mode).
 /// All commands, including those from substitutions, appear as top-level pipelines.
 ///
+/// When `expand` is set, statically-analysable `for` loops are unrolled into their
+/// individual commands (`for f in a b; do echo $f; done` -> `echo a`, `echo b`).
+///
 /// # Errors
 ///
 /// Returns [`ParseError`] when `input` does not parse as a bash program.
-pub fn split(input: &str) -> Result<Vec<Vec<Stage>>, ParseError> {
-    let commands = walk_and_expand(input)?;
+pub fn split(input: &str, expand: bool) -> Result<Vec<Vec<Stage>>, ParseError> {
+    let commands = walk_and_expand(input, expand)?;
     Ok(group_into_pipelines(&commands))
 }
 
 /// Splits `input` into nested pipelines of stages.
 /// Only root commands appear at the top level; substitutions are embedded recursively.
+/// `expand` unrolls static `for` loops, as in [`split`].
 ///
 /// # Errors
 ///
 /// Returns [`ParseError`] when `input` does not parse as a bash program.
-pub fn split_nested(input: &str) -> Result<Vec<Vec<NestedStage>>, ParseError> {
-    let commands = walk_and_expand(input)?;
+pub fn split_nested(input: &str, expand: bool) -> Result<Vec<Vec<NestedStage>>, ParseError> {
+    let commands = walk_and_expand(input, expand)?;
     Ok(build_nested_pipelines(&commands))
 }
 
-fn walk_and_expand(input: &str) -> Result<Vec<Walked>, ParseError> {
+fn walk_and_expand(input: &str, expand: bool) -> Result<Vec<Walked>, ParseError> {
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
     let program = parser
         .parse_program()
@@ -61,9 +66,16 @@ fn walk_and_expand(input: &str) -> Result<Vec<Walked>, ParseError> {
     let mut commands = Vec::new();
     let mut subs = Vec::new();
     for complete_command in &program.complete_commands {
-        walk_compound_list(complete_command, false, &mut commands, &mut subs);
+        walk_compound_list(
+            complete_command,
+            false,
+            &mut commands,
+            &mut subs,
+            expand,
+            &[],
+        );
     }
-    expand_substitutions(&mut commands, subs);
+    expand_substitutions(&mut commands, subs, expand);
 
     // Backfill the reverse edge: each parent learns which stages surfaced from it.
     let edges: Vec<(usize, usize)> = commands

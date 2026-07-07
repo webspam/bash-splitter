@@ -7,7 +7,9 @@ use bash_splitter::{split, split_nested};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let nested = args.len() > 1 && (args[1] == "-n" || args[1] == "--nested");
+    let nested = args.iter().any(|a| a == "-n" || a == "--nested");
+    // Static `for` loops unroll by default; -E/--no-expand keeps them as a single body.
+    let expand = !args.iter().any(|a| a == "-E" || a == "--no-expand");
 
     let mut input = String::new();
     if let Err(e) = std::io::stdin().read_to_string(&mut input) {
@@ -16,7 +18,7 @@ fn main() {
     }
 
     let json = if nested {
-        match split_nested(&input) {
+        match split_nested(&input, expand) {
             Ok(pipelines) => {
                 serde_json::to_string(&pipelines).expect("NestedStage is always serializable")
             }
@@ -26,7 +28,7 @@ fn main() {
             }
         }
     } else {
-        match split(&input) {
+        match split(&input, expand) {
             Ok(pipelines) => {
                 serde_json::to_string(&pipelines).expect("Stage is always serializable")
             }

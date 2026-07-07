@@ -5,14 +5,18 @@ use crate::walk::walk_compound_list;
 
 /// Appends each substitution's commands after the walked ones, level by level so
 /// nested substitutions surface too.
-pub(crate) fn expand_substitutions(commands: &mut Vec<Walked>, mut pending: Vec<Sub>) {
+pub(crate) fn expand_substitutions(
+    commands: &mut Vec<Walked>,
+    mut pending: Vec<Sub>,
+    expand: bool,
+) {
     while !pending.is_empty() {
         let mut next = Vec::new();
         for sub in &pending {
             // Every command this source walks out is a direct child of the stage the
             // substitution sat in; deeper substitutions surface in the next round.
             let start = commands.len();
-            split_source(&sub.source, commands, &mut next);
+            split_source(&sub.source, commands, &mut next, expand);
             for walked in &mut commands[start..] {
                 walked.parent = sub.parent;
             }
@@ -23,14 +27,14 @@ pub(crate) fn expand_substitutions(commands: &mut Vec<Walked>, mut pending: Vec<
 
 /// Parses one source string and walks it. A substitution that does not parse on its
 /// own surfaces nothing rather than aborting the whole split.
-fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<Sub>) {
+fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<Sub>, expand: bool) {
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
     let Ok(program) = parser.parse_program() else {
         return;
     };
-    // A re-parsed substitution starts a fresh tree; loop context does not cross in.
+    // A re-parsed substitution starts a fresh tree; loop bindings do not cross in.
     for complete_command in &program.complete_commands {
-        walk_compound_list(complete_command, false, out, subs);
+        walk_compound_list(complete_command, false, out, subs, expand, &[]);
     }
 }
 

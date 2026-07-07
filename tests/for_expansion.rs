@@ -1,0 +1,147 @@
+//! Static `for`-loop unrolling: a loop over plain literals is expanded into its
+//! individual commands. Anything needing real expansion is left as a single body.
+
+mod common;
+use common::{args, command_text, in_loop, name, split, variables};
+use serde_json::Value;
+
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+/// Runs the binary with `--no-expand` and returns the flattened stage list.
+fn split_no_expand(input: &str) -> Vec<Value> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
+        .arg("--no-expand")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .expect("write");
+    let output = child.wait_with_output().expect("wait");
+    let pipelines: Vec<Vec<Value>> = serde_json::from_slice(&output.stdout).expect("json");
+    pipelines.into_iter().flatten().collect()
+}
+
+/// The reconstructed `command` text of each stage, in source order.
+fn commands(cmds: &[Value]) -> Vec<&str> {
+    cmds.iter().map(command_text).collect()
+}
+
+#[test]
+fn plain_literals_are_unrolled() {
+    let cmds = split("for f in a b c; do echo $f; done");
+    assert_eq!(commands(&cmds), ["echo a", "echo b", "echo c"]);
+    for cmd in &cmds {
+        assert_eq!(name(cmd), Some("echo"));
+    }
+    assert_eq!(args(&cmds[0]), ["a"]);
+}
+
+#[test]
+fn no_expand_flag_keeps_single_body() {
+    let cmds = split_no_expand("for f in a b c; do echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $f"]);
+    assert_eq!(variables(&cmds[0]), ["f"]);
+}
+
+#[test]
+fn expanded_stage_stays_flagged_in_loop() {
+    let cmds = split("for f in a b; do echo $f; done");
+    assert!(cmds.iter().all(in_loop));
+}
+
+#[test]
+fn loop_variable_drops_out_of_variables() {
+    // `$f` is substituted, so it is no longer a parameter the stage expands.
+    let cmds = split("for f in a b; do echo $f; done");
+    assert!(cmds.iter().all(|c| variables(c).is_empty()));
+}
+
+#[test]
+fn other_variables_survive_expansion() {
+    let cmds = split("for f in a b; do grep \"$pat\" \"$f\"; done");
+    assert_eq!(
+        commands(&cmds),
+        ["grep \"$pat\" \"a\"", "grep \"$pat\" \"b\""]
+    );
+    assert_eq!(variables(&cmds[0]), ["pat"]);
+}
+
+#[test]
+fn braced_reference_in_double_quotes_is_substituted() {
+    let cmds = split("for f in a b; do echo \"val=${f}!\"; done");
+    assert_eq!(commands(&cmds), ["echo \"val=a!\"", "echo \"val=b!\""]);
+}
+
+#[test]
+fn redirect_target_is_substituted() {
+    let cmds = split("for f in a b; do echo hi > out/$f; done");
+    let targets: Vec<&str> = cmds
+        .iter()
+        .map(|c| c["redirects"][0]["target"].as_str().unwrap())
+        .collect();
+    assert_eq!(targets, ["out/a", "out/b"]);
+}
+
+#[test]
+fn body_without_the_variable_still_repeats() {
+    let cmds = split("for f in a b c; do echo hi; done");
+    assert_eq!(commands(&cmds), ["echo hi", "echo hi", "echo hi"]);
+}
+
+#[test]
+fn multi_command_body_keeps_iteration_order() {
+    let cmds = split("for f in a b; do echo $f; ls $f; done");
+    assert_eq!(commands(&cmds), ["echo a", "ls a", "echo b", "ls b"]);
+}
+
+#[test]
+fn nested_static_loops_compose() {
+    let cmds = split("for a in x; do for b in y z; do touch $a$b; done; done");
+    assert_eq!(commands(&cmds), ["touch xy", "touch xz"]);
+}
+
+#[test]
+fn single_quoted_reference_is_left_literal() {
+    // The loop unrolls, but `$f` inside single quotes does not expand.
+    let cmds = split("for f in a b; do echo '$f'; done");
+    assert_eq!(commands(&cmds), ["echo '$f'", "echo '$f'"]);
+}
+
+// ---- non-static loops are left as a single body ----
+
+#[test]
+fn quoted_multiword_value_is_not_expanded() {
+    let cmds = split("for f in \"a b\" c; do echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $f"]);
+}
+
+#[test]
+fn glob_value_is_not_expanded() {
+    let cmds = split("for f in *.txt; do echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $f"]);
+}
+
+#[test]
+fn substitution_value_is_not_expanded() {
+    let cmds = split("for f in $(ls); do echo $f; done");
+    // The body is walked once; `ls` surfaces as its own pipeline.
+    assert_eq!(commands(&cmds), ["echo $f", "ls"]);
+}
+
+#[test]
+fn reassigned_variable_blocks_expansion() {
+    let cmds = split("for f in a b; do f=x; echo $f; done");
+    assert_eq!(commands(&cmds), ["f=x", "echo $f"]);
+}
+
+#[test]
+fn variable_valued_loop_is_not_expanded() {
+    let cmds = split("for f in $x $y; do echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $f"]);
+}

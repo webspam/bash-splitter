@@ -201,3 +201,19 @@ echo 'echo $(foo $(bar))' | bash-splitter -n
 ```
 
 A substitution with no owning stage (a substitution in `[[ ... ]]`, or in a redirect on a compound command) has no parent to embed it under, so it surfaces as a top-level pipeline in both modes.
+
+## Static loop expansion
+
+A `for` loop over plain literals is unrolled into its individual commands, so each is checked as the concrete command it runs:
+
+```sh
+echo 'for f in a b c; do echo $f; done' | bash-splitter
+```
+
+```json
+[[{ "command": "echo a", "name": "echo", "args": ["a"], "in_loop": true }],
+ [{ "command": "echo b", "name": "echo", "args": ["b"], "in_loop": true }],
+ [{ "command": "echo c", "name": "echo", "args": ["c"], "in_loop": true }]]
+```
+
+Only fully-static loops expand; a glob, expansion, quote, or a body that reassigns the loop variable leaves it as a single body. Pass `-E` / `--no-expand` to disable it. See the [coverage reference](docs/reference/coverage.md#static-loop-expansion) for details.
