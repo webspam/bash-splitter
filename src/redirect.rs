@@ -52,7 +52,7 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
 
 /// The one word a redirect expands: its target, or an unquoted heredoc body.
 #[allow(clippy::match_same_arms)]
-pub(crate) fn expandable_word(redirect: &ast::IoRedirect) -> Option<&ast::Word> {
+pub(crate) fn expanded_word(redirect: &ast::IoRedirect) -> Option<&ast::Word> {
     use ast::IoFileRedirectTarget as T;
     use ast::IoRedirect as R;
     match redirect {
@@ -65,9 +65,9 @@ pub(crate) fn expandable_word(redirect: &ast::IoRedirect) -> Option<&ast::Word> 
     }
 }
 
-/// As [`expandable_word`], mutably (the borrow rules force a second match).
+/// As [`expanded_word`], mutably (the borrow rules force a second match).
 #[allow(clippy::match_same_arms)]
-pub(crate) fn expandable_word_mut(redirect: &mut ast::IoRedirect) -> Option<&mut ast::Word> {
+pub(crate) fn expanded_word_mut(redirect: &mut ast::IoRedirect) -> Option<&mut ast::Word> {
     use ast::IoFileRedirectTarget as T;
     use ast::IoRedirect as R;
     match redirect {
@@ -81,7 +81,7 @@ pub(crate) fn expandable_word_mut(redirect: &mut ast::IoRedirect) -> Option<&mut
 
 /// Variables in a redirect's expanded target, or an unquoted heredoc body.
 pub(crate) fn collect_redirect_vars(redirect: &ast::IoRedirect, vars: &mut Vec<String>) {
-    if let Some(w) = expandable_word(redirect) {
+    if let Some(w) = expanded_word(redirect) {
         collect_word_vars(&w.value, vars);
     }
 }

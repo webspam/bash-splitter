@@ -11,7 +11,7 @@ use brush_parser::ParserOptions;
 use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
 
-use crate::redirect::expandable_word_mut;
+use crate::redirect::expanded_word_mut;
 use crate::simple::prefix_suffix_items;
 use crate::word::is_ident_char;
 
@@ -135,7 +135,7 @@ fn substitute_item(item: &mut ast::CommandPrefixOrSuffixItem, active: &[Subst]) 
     match item {
         I::Word(w) | I::AssignmentWord(_, w) => substitute(w, active),
         I::IoRedirect(r) => {
-            if let Some(w) = expandable_word_mut(r) {
+            if let Some(w) = expanded_word_mut(r) {
                 substitute(w, active);
             }
         }
