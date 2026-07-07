@@ -11,17 +11,38 @@ pub(crate) fn push_unique(vars: &mut Vec<String>, v: String) {
     }
 }
 
-/// Pulls the names of any parameter expansions out of a single word.
-pub(crate) fn collect_word_vars(word: &str, vars: &mut Vec<String>) {
+/// Pulls the parameter names and command-substitution sources out of a single word
+/// in one parse.
+pub(crate) fn collect_word_expansions(
+    word: &str,
+    parent: Option<usize>,
+    vars: &mut Vec<String>,
+    subs: &mut Vec<Sub>,
+) {
     let Ok(pieces) = word::parse(word, &ParserOptions::default()) else {
         return;
     };
-    collect_piece_vars(&pieces, vars);
+    collect_piece_expansions(&pieces, parent, vars, subs);
 }
 
-pub(crate) fn collect_piece_vars(pieces: &[WordPieceWithSource], vars: &mut Vec<String>) {
+fn collect_piece_expansions(
+    pieces: &[WordPieceWithSource],
+    parent: Option<usize>,
+    vars: &mut Vec<String>,
+    subs: &mut Vec<Sub>,
+) {
     for piece in pieces {
         match &piece.piece {
+            WordPiece::CommandSubstitution(s) | WordPiece::BackquotedCommandSubstitution(s) => subs
+                .push(Sub {
+                    source: s.clone(),
+                    parent,
+                }),
+            // Both expand inside double quotes (`"$x"`, `"$(...)"`) but not single quotes.
+            WordPiece::DoubleQuotedSequence(inner)
+            | WordPiece::GettextDoubleQuotedSequence(inner) => {
+                collect_piece_expansions(inner, parent, vars, subs)
+            }
             WordPiece::ParameterExpansion(expr) => {
                 if let Some(parameter) = param_of(expr) {
                     push_unique(vars, param_name(parameter));
@@ -29,18 +50,15 @@ pub(crate) fn collect_piece_vars(pieces: &[WordPieceWithSource], vars: &mut Vec<
                 // `${arr[$i]}` and `${x:-$y}`: the subscript and value/pattern words expand
                 // too. A subscript is an arithmetic context, so bare names count.
                 if let Some(index) = param_subscript(expr) {
-                    collect_word_vars(index, vars);
+                    collect_word_expansions(index, parent, vars, subs);
                     collect_bare_arith_names(index, vars);
                 }
-                collect_param_expr_words(expr, |w| collect_word_vars(w, vars));
+                collect_param_expr_words(expr, |w| collect_word_expansions(w, parent, vars, subs));
             }
-            // Variables expand inside double quotes (`"$x"`) but not single quotes.
-            WordPiece::DoubleQuotedSequence(inner)
-            | WordPiece::GettextDoubleQuotedSequence(inner) => collect_piece_vars(inner, vars),
-            // `$(( $x ))` parses as an expansion; bare names (`$(( x ))`) also read
-            // the variable, and only a lexical scan sees them.
+            // `$(( $x + $(cmd) ))` parses as an expansion; bare names (`$(( x ))`) also
+            // read the variable, and only a lexical scan sees them.
             WordPiece::ArithmeticExpression(a) => {
-                collect_word_vars(&a.value, vars);
+                collect_word_expansions(&a.value, parent, vars, subs);
                 collect_bare_arith_names(&a.value, vars);
             }
             _ => {}

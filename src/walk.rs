@@ -3,9 +3,7 @@ use brush_parser::ast;
 use crate::expand::{self, Subst};
 use crate::extended_test::collect_extended_test_subs;
 use crate::redirect::collect_redirect_list_subs;
-use crate::simple::{
-    collect_simple_subs, prefix_assignments, simple_redirects, simple_vars, suffix_args,
-};
+use crate::simple::{collect_expansions, prefix_assignments, simple_redirects, suffix_args};
 use crate::types::{Stage, Sub, Walked};
 use crate::word::collect_word_subs;
 
@@ -81,11 +79,11 @@ fn walk_command(
                 substituted = expand::substitute_simple(simple, active);
                 &substituted
             };
-            let variables = simple_vars(simple);
+            let id = ctx.out.len();
+            let variables = collect_expansions(simple, id, ctx.subs);
             if !active.is_empty() && expand::stage_breaks_unroll(simple, &variables, active) {
                 ctx.poisoned = true;
             }
-            let id = ctx.out.len();
             ctx.out.push(Walked {
                 stage: Stage {
                     command: simple.to_string(),
@@ -100,7 +98,6 @@ fn walk_command(
                 children: Vec::new(),
                 piped_from_previous,
             });
-            collect_simple_subs(simple, id, ctx.subs);
         }
         // Descend so commands nested in the compound surface individually. As a
         // pipeline stage (`foo | (grep x)`), its first inner command takes the pipe.
