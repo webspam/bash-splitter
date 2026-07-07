@@ -50,19 +50,39 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
     }
 }
 
-/// Variables in a redirect's expanded target, or an unquoted heredoc body.
+/// The one word a redirect expands: its target, or an unquoted heredoc body.
 #[allow(clippy::match_same_arms)]
-pub(crate) fn collect_redirect_vars(redirect: &ast::IoRedirect, vars: &mut Vec<String>) {
+pub(crate) fn expandable_word(redirect: &ast::IoRedirect) -> Option<&ast::Word> {
     use ast::IoFileRedirectTarget as T;
     use ast::IoRedirect as R;
     match redirect {
-        R::File(_, _, T::Filename(w) | T::Duplicate(w)) => collect_word_vars(&w.value, vars),
-        R::File(_, _, T::Fd(_) | T::ProcessSubstitution(_, _)) => {}
-        R::OutputAndError(w, _) | R::HereString(_, w) => collect_word_vars(&w.value, vars),
-        R::HereDocument(_, doc) if doc.requires_expansion => {
-            collect_word_vars(&doc.doc.value, vars)
-        }
-        R::HereDocument(_, _) => {}
+        R::File(_, _, T::Filename(w) | T::Duplicate(w)) => Some(w),
+        R::File(_, _, T::Fd(_) | T::ProcessSubstitution(_, _)) => None,
+        R::OutputAndError(w, _) | R::HereString(_, w) => Some(w),
+        // Only an unquoted delimiter expands the body.
+        R::HereDocument(_, doc) if doc.requires_expansion => Some(&doc.doc),
+        R::HereDocument(_, _) => None,
+    }
+}
+
+/// As [`expandable_word`], mutably (the borrow rules force a second match).
+#[allow(clippy::match_same_arms)]
+pub(crate) fn expandable_word_mut(redirect: &mut ast::IoRedirect) -> Option<&mut ast::Word> {
+    use ast::IoFileRedirectTarget as T;
+    use ast::IoRedirect as R;
+    match redirect {
+        R::File(_, _, T::Filename(w) | T::Duplicate(w)) => Some(w),
+        R::File(_, _, T::Fd(_) | T::ProcessSubstitution(_, _)) => None,
+        R::OutputAndError(w, _) | R::HereString(_, w) => Some(w),
+        R::HereDocument(_, doc) if doc.requires_expansion => Some(&mut doc.doc),
+        R::HereDocument(_, _) => None,
+    }
+}
+
+/// Variables in a redirect's expanded target, or an unquoted heredoc body.
+pub(crate) fn collect_redirect_vars(redirect: &ast::IoRedirect, vars: &mut Vec<String>) {
+    if let Some(w) = expandable_word(redirect) {
+        collect_word_vars(&w.value, vars);
     }
 }
 

@@ -11,6 +11,7 @@ use brush_parser::ParserOptions;
 use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
 
+use crate::redirect::expandable_word_mut;
 use crate::simple::prefix_suffix_items;
 use crate::word::is_ident_char;
 
@@ -133,23 +134,13 @@ fn substitute_item(item: &mut ast::CommandPrefixOrSuffixItem, active: &[Subst]) 
     use ast::CommandPrefixOrSuffixItem as I;
     match item {
         I::Word(w) | I::AssignmentWord(_, w) => substitute(w, active),
-        I::IoRedirect(r) => substitute_redirect(r, active),
+        I::IoRedirect(r) => {
+            if let Some(w) = expandable_word_mut(r) {
+                substitute(w, active);
+            }
+        }
         // Its body is a separate surfaced pipeline, walked without this binding.
         I::ProcessSubstitution(_, _) => {}
-    }
-}
-
-#[allow(clippy::match_same_arms)]
-fn substitute_redirect(redirect: &mut ast::IoRedirect, active: &[Subst]) {
-    use ast::IoFileRedirectTarget as T;
-    use ast::IoRedirect as R;
-    match redirect {
-        R::File(_, _, T::Filename(w) | T::Duplicate(w)) => substitute(w, active),
-        R::File(_, _, T::Fd(_) | T::ProcessSubstitution(_, _)) => {}
-        R::OutputAndError(w, _) | R::HereString(_, w) => substitute(w, active),
-        // Only an unquoted delimiter expands the body.
-        R::HereDocument(_, doc) if doc.requires_expansion => substitute(&mut doc.doc, active),
-        R::HereDocument(_, _) => {}
     }
 }
 
