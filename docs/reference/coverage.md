@@ -46,4 +46,6 @@ Only fully-static loops qualify; anything needing real expansion or guesswork is
 | Function definition        | `for f in a b; do g() { ...; }; done`    | Left as one body; the function body runs at call time, not per iteration.            |
 | Unrewritable reference     | `${f%.txt}`, `${f:-x}`, `$((f+1))`, `$(cmd $f)` | Left as one body; only plain `$f` / `${f}` is substituted, so any other reference to the variable would dangle once the loop is gone. |
 
-Only plain `$f` / `${f}` (including inside double quotes) is substituted. A loop whose body reaches the variable any other way, anywhere the splitter looks (`[[ ]]` words, case patterns, redirects, substitution bodies), is left as a single body rather than unrolled with a dangling reference.
+Only plain `$f` / `${f}` (including inside double quotes) is substituted. A loop whose body reaches the variable any other way in a position that appears in the output (command words, redirects, substitution bodies) is left as a single body rather than unrolled with a dangling reference.
+
+A bare `$f` in a position the splitter never outputs (a `[[ ]]` word, a `case` dispatch value) does not block unrolling: nothing dangles, but the output lists every branch's commands per iteration even though each iteration runs only one. Branches are always over-reported this way, unrolled or not.
