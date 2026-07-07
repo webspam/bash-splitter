@@ -4,7 +4,7 @@ use crate::expand::{self, Subst};
 use crate::extended_test::collect_extended_test_subs;
 use crate::redirect::collect_redirect_list_subs;
 use crate::simple::{collect_expansions, prefix_assignments, simple_redirects, suffix_args};
-use crate::types::{Stage, Sub, Walked};
+use crate::types::{Stage, StageId, Sub, Walked};
 use crate::word::collect_word_subs;
 
 /// The walk's shared state: the stages walked out so far, the substitutions still to
@@ -79,7 +79,7 @@ fn walk_command(
                 substituted = expand::substitute_simple(simple, active);
                 &substituted
             };
-            let id = ctx.out.len();
+            let id = StageId(ctx.out.len());
             let variables = collect_expansions(simple, id, ctx.subs);
             if !active.is_empty() && expand::stage_breaks_unroll(simple, &variables, active) {
                 ctx.poisoned = true;

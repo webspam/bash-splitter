@@ -2,7 +2,7 @@ use brush_parser::ParserOptions;
 use brush_parser::word::{self, WordPiece, WordPieceWithSource};
 
 use crate::params::{collect_param_expr_words, param_name, param_of, param_subscript};
-use crate::types::Sub;
+use crate::types::{StageId, Sub};
 
 /// Appends `v` unless already present, keeping first-seen order.
 pub(crate) fn push_unique(vars: &mut Vec<String>, v: String) {
@@ -15,7 +15,7 @@ pub(crate) fn push_unique(vars: &mut Vec<String>, v: String) {
 /// in one parse.
 pub(crate) fn collect_word_expansions(
     word: &str,
-    parent: Option<usize>,
+    parent: Option<StageId>,
     vars: &mut Vec<String>,
     subs: &mut Vec<Sub>,
 ) {
@@ -27,7 +27,7 @@ pub(crate) fn collect_word_expansions(
 
 fn collect_piece_expansions(
     pieces: &[WordPieceWithSource],
-    parent: Option<usize>,
+    parent: Option<StageId>,
     vars: &mut Vec<String>,
     subs: &mut Vec<Sub>,
 ) {
@@ -98,7 +98,7 @@ pub(crate) fn collect_bare_arith_names(text: &str, vars: &mut Vec<String>) {
 
 /// Pulls the bodies of any command substitutions out of a single word, tagging each
 /// with the `parent` stage the word belongs to (`None` for a container that runs nothing).
-pub(crate) fn collect_word_subs(word: &str, parent: Option<usize>, subs: &mut Vec<Sub>) {
+pub(crate) fn collect_word_subs(word: &str, parent: Option<StageId>, subs: &mut Vec<Sub>) {
     let Ok(pieces) = word::parse(word, &ParserOptions::default()) else {
         return;
     };
@@ -107,7 +107,7 @@ pub(crate) fn collect_word_subs(word: &str, parent: Option<usize>, subs: &mut Ve
 
 pub(crate) fn collect_piece_subs(
     pieces: &[WordPieceWithSource],
-    parent: Option<usize>,
+    parent: Option<StageId>,
     subs: &mut Vec<Sub>,
 ) {
     for piece in pieces {

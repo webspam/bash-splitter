@@ -75,10 +75,10 @@ fn walk_and_expand(input: &str, expand: bool) -> Result<Vec<Walked>, ParseError>
     let edges: Vec<(usize, usize)> = commands
         .iter()
         .enumerate()
-        .filter_map(|(id, w)| w.parent.map(|p| (p, id)))
+        .filter_map(|(id, w)| w.parent.map(|p| (p.0, id)))
         .collect();
     for (parent, child) in edges {
-        commands[parent].children.push(child);
+        commands[parent].children.push(types::StageId(child));
     }
 
     Ok(commands)

@@ -72,11 +72,15 @@ pub(crate) struct HereDoc {
     pub(crate) body: String,
 }
 
+/// Identifies a stage: its index in walk output order.
+#[derive(Clone, Copy)]
+pub(crate) struct StageId(pub(crate) usize);
+
 /// A walked command plus internal bookkeeping used to group stages into pipelines.
 pub(crate) struct Walked {
     pub(crate) stage: Stage,
-    pub(crate) parent: Option<usize>,
-    pub(crate) children: Vec<usize>,
+    pub(crate) parent: Option<StageId>,
+    pub(crate) children: Vec<StageId>,
     pub(crate) piped_from_previous: bool,
 }
 
@@ -84,5 +88,5 @@ pub(crate) struct Walked {
 /// came from (`None` for a container that runs nothing, e.g. `[[ ]]`).
 pub(crate) struct Sub {
     pub(crate) source: String,
-    pub(crate) parent: Option<usize>,
+    pub(crate) parent: Option<StageId>,
 }

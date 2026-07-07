@@ -1,6 +1,6 @@
 use brush_parser::{Parser, ParserOptions};
 
-use crate::types::{NestedStage, Stage, Sub, Walked};
+use crate::types::{NestedStage, Stage, StageId, Sub, Walked};
 use crate::walk::{Ctx, walk_compound_list};
 
 /// Appends each substitution's commands after the walked ones, level by level so
@@ -80,7 +80,7 @@ fn build_nested_stage(idx: usize, commands: &[Walked]) -> NestedStage {
     let cmd = &commands[idx];
     NestedStage {
         stage: cmd.stage.clone(),
-        substitutions: bucket_piped(cmd.children.iter().map(|&child_idx| {
+        substitutions: bucket_piped(cmd.children.iter().map(|&StageId(child_idx)| {
             (
                 build_nested_stage(child_idx, commands),
                 commands[child_idx].piped_from_previous,

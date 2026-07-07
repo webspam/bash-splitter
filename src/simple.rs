@@ -1,7 +1,7 @@
 use brush_parser::ast;
 
 use crate::redirect::{collect_redirect_expansions, redirect_of};
-use crate::types::{Redirect, Sub};
+use crate::types::{Redirect, StageId, Sub};
 use crate::word::collect_word_expansions;
 
 /// Env assignments preceding the command name. Only [`AssignmentWord`](ast::CommandPrefixOrSuffixItem::AssignmentWord)s count; a prefix
@@ -60,7 +60,7 @@ pub(crate) fn simple_redirects(simple: &ast::SimpleCommand) -> Vec<Redirect> {
 /// are tagged with `parent`, the `id` of the stage they are emitted as.
 pub(crate) fn collect_expansions(
     simple: &ast::SimpleCommand,
-    parent: usize,
+    parent: StageId,
     subs: &mut Vec<Sub>,
 ) -> Vec<String> {
     let mut vars = Vec::new();
@@ -78,7 +78,7 @@ pub(crate) fn collect_expansions(
 
 fn item_expansions(
     item: &ast::CommandPrefixOrSuffixItem,
-    parent: usize,
+    parent: StageId,
     vars: &mut Vec<String>,
     subs: &mut Vec<Sub>,
 ) {

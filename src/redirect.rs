@@ -1,6 +1,6 @@
 use brush_parser::ast;
 
-use crate::types::{HereDoc, Redirect, Sub};
+use crate::types::{HereDoc, Redirect, StageId, Sub};
 use crate::word::{collect_word_expansions, collect_word_subs};
 
 /// Structures one redirect for output.
@@ -83,7 +83,7 @@ pub(crate) fn expanded_word_mut(redirect: &mut ast::IoRedirect) -> Option<&mut a
 /// an unquoted heredoc body), plus a process substitution's body (`> >(cmd)`).
 pub(crate) fn collect_redirect_expansions(
     redirect: &ast::IoRedirect,
-    parent: Option<usize>,
+    parent: Option<StageId>,
     vars: &mut Vec<String>,
     subs: &mut Vec<Sub>,
 ) {
@@ -96,7 +96,7 @@ pub(crate) fn collect_redirect_expansions(
 /// As [`collect_redirect_expansions`], substitutions only (for stage-less contexts).
 pub(crate) fn collect_redirect_subs(
     redirect: &ast::IoRedirect,
-    parent: Option<usize>,
+    parent: Option<StageId>,
     subs: &mut Vec<Sub>,
 ) {
     if let Some(w) = expanded_word(redirect) {
@@ -105,7 +105,7 @@ pub(crate) fn collect_redirect_subs(
     collect_process_sub(redirect, parent, subs);
 }
 
-fn collect_process_sub(redirect: &ast::IoRedirect, parent: Option<usize>, subs: &mut Vec<Sub>) {
+fn collect_process_sub(redirect: &ast::IoRedirect, parent: Option<StageId>, subs: &mut Vec<Sub>) {
     use ast::IoFileRedirectTarget as T;
     use ast::IoRedirect as R;
     if let R::File(_, _, T::ProcessSubstitution(_, sub)) = redirect {
