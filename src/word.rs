@@ -26,19 +26,55 @@ pub(crate) fn collect_piece_vars(pieces: &[WordPieceWithSource], vars: &mut Vec<
                 if let Some(parameter) = param_of(expr) {
                     push_unique(vars, param_name(parameter));
                 }
-                // `${arr[$i]}` and `${x:-$y}`: the subscript and value/pattern words expand too.
+                // `${arr[$i]}` and `${x:-$y}`: the subscript and value/pattern words expand
+                // too. A subscript is an arithmetic context, so bare names count.
                 if let Some(index) = param_subscript(expr) {
                     collect_word_vars(index, vars);
+                    collect_bare_arith_names(index, vars);
                 }
                 collect_param_expr_words(expr, |w| collect_word_vars(w, vars));
             }
             // Variables expand inside double quotes (`"$x"`) but not single quotes.
             WordPiece::DoubleQuotedSequence(inner)
             | WordPiece::GettextDoubleQuotedSequence(inner) => collect_piece_vars(inner, vars),
-            // `$(( $x ))` references x; bare arithmetic names (`$(( x ))`) are missed.
-            WordPiece::ArithmeticExpression(a) => collect_word_vars(&a.value, vars),
+            // `$(( $x ))` parses as an expansion; bare names (`$(( x ))`) also read
+            // the variable, and only a lexical scan sees them.
+            WordPiece::ArithmeticExpression(a) => {
+                collect_word_vars(&a.value, vars);
+                collect_bare_arith_names(&a.value, vars);
+            }
             _ => {}
         }
+    }
+}
+
+pub(crate) fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Bare identifiers in arithmetic text (`x` in `x + 1`). `$x`/`${x}` forms are left
+/// to the word parse: a run preceded by `$` is skipped, and dedup absorbs `${x}`.
+/// A run starting with a digit (`0x1A`) names nothing.
+pub(crate) fn collect_bare_arith_names(text: &str, vars: &mut Vec<String>) {
+    let mut prev: Option<char> = None;
+    let mut chars = text.char_indices().peekable();
+    while let Some((start, c)) = chars.next() {
+        if !is_ident_char(c) {
+            prev = Some(c);
+            continue;
+        }
+        let mut end = start + c.len_utf8();
+        while let Some(&(i, c2)) = chars.peek() {
+            if !is_ident_char(c2) {
+                break;
+            }
+            end = i + c2.len_utf8();
+            chars.next();
+        }
+        if (c.is_alphabetic() || c == '_') && prev != Some('$') {
+            push_unique(vars, text[start..end].to_string());
+        }
+        prev = text[start..end].chars().next_back();
     }
 }
 
