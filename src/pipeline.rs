@@ -39,57 +39,52 @@ fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<Sub>, expand:
     }
 }
 
-/// Buckets the flat walk order into pipelines (flat mode): a command that reads an
-/// upstream pipe continues the current pipeline; any other command starts a new one.
-pub(crate) fn group_into_pipelines(commands: &[Walked]) -> Vec<Vec<Stage>> {
-    let mut pipelines: Vec<Vec<Stage>> = Vec::new();
-    for cmd in commands {
-        let stage = cmd.stage.clone();
+/// Buckets items into pipelines: a piped item continues the current pipeline; any
+/// other starts a new one.
+fn bucket_piped<T>(items: impl Iterator<Item = (T, bool)>) -> Vec<Vec<T>> {
+    let mut pipelines: Vec<Vec<T>> = Vec::new();
+    for (item, piped) in items {
         match pipelines.last_mut() {
-            Some(current) if cmd.piped_from_previous => current.push(stage),
-            _ => pipelines.push(vec![stage]),
+            Some(current) if piped => current.push(item),
+            _ => pipelines.push(vec![item]),
         }
     }
     pipelines
 }
 
+/// Buckets the flat walk order into pipelines (flat mode).
+pub(crate) fn group_into_pipelines(commands: &[Walked]) -> Vec<Vec<Stage>> {
+    bucket_piped(
+        commands
+            .iter()
+            .map(|cmd| (cmd.stage.clone(), cmd.piped_from_previous)),
+    )
+}
+
 /// Builds nested pipelines (nested mode): only root commands at the top level,
 /// substitutions embedded recursively under their parent command.
 pub(crate) fn build_nested_pipelines(commands: &[Walked]) -> Vec<Vec<NestedStage>> {
-    let mut pipelines: Vec<Vec<NestedStage>> = Vec::new();
-
-    for (idx, cmd) in commands.iter().enumerate() {
-        // A command with a parent is embedded under it, not surfaced at the top level.
-        if cmd.parent.is_some() {
-            continue;
-        }
-
-        let stage = build_nested_stage(idx, commands);
-        match pipelines.last_mut() {
-            Some(current) if cmd.piped_from_previous => current.push(stage),
-            _ => pipelines.push(vec![stage]),
-        }
-    }
-
-    pipelines
+    bucket_piped(
+        commands
+            .iter()
+            .enumerate()
+            // A command with a parent is embedded under it, not surfaced at the top level.
+            .filter(|(_, cmd)| cmd.parent.is_none())
+            .map(|(idx, cmd)| (build_nested_stage(idx, commands), cmd.piped_from_previous)),
+    )
 }
 
 /// Recursively builds a nested stage from its index, grouping its substitutions into
 /// sub-pipelines by their own pipe flags.
 fn build_nested_stage(idx: usize, commands: &[Walked]) -> NestedStage {
     let cmd = &commands[idx];
-
-    let mut substitutions: Vec<Vec<NestedStage>> = Vec::new();
-    for &child_idx in &cmd.children {
-        let child_stage = build_nested_stage(child_idx, commands);
-        match substitutions.last_mut() {
-            Some(current) if commands[child_idx].piped_from_previous => current.push(child_stage),
-            _ => substitutions.push(vec![child_stage]),
-        }
-    }
-
     NestedStage {
         stage: cmd.stage.clone(),
-        substitutions,
+        substitutions: bucket_piped(cmd.children.iter().map(|&child_idx| {
+            (
+                build_nested_stage(child_idx, commands),
+                commands[child_idx].piped_from_previous,
+            )
+        })),
     }
 }
