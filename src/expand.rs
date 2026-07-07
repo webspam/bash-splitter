@@ -1,13 +1,18 @@
 //! Static `for`-loop unrolling: `for f in a b c; do echo $f; done` becomes the
-//! individual commands `echo a`, `echo b`, `echo c`. Only fully-static loops
-//! qualify (every value a plain literal, the variable never reassigned); anything
-//! needing real expansion or guesswork is left for the normal walk.
+//! individual commands `echo a`, `echo b`, `echo c`.
+//!
+//! Qualification is validate-and-rollback, not a pre-scan: the walk unrolls
+//! speculatively, and anything it emits that proves the unroll unfaithful (a
+//! residual reference to the bound variable, a rebind, flow control) poisons the
+//! attempt, which is then discarded and re-walked as a single body. The walk is
+//! the only traversal, so the check can never disagree with it about coverage.
 
 use brush_parser::ParserOptions;
 use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
 
-use crate::params::{collect_param_expr_words, param_name, param_of, param_subscript};
+use crate::simple::prefix_suffix_items;
+use crate::word::is_ident_char;
 
 /// An active loop binding: the variable and the literal it currently expands to.
 #[derive(Clone, Copy)]
@@ -33,32 +38,76 @@ fn literal_value(word: &str) -> Option<&str> {
     Some(word)
 }
 
-/// The literals to unroll a `for` loop over, or `None` when it is not statically
-/// expandable (disabled, non-literal values, a shadowed or reassigned variable).
-pub(crate) fn for_values<'a>(
-    f: &'a ast::ForClauseCommand,
-    expand: bool,
-    active: &[Subst],
-) -> Option<Vec<&'a str>> {
+/// The literals to unroll a `for` loop over, or `None` when a value is anything but
+/// a plain literal. Whether the *body* can be unrolled is decided by the walk itself.
+pub(crate) fn for_values(f: &ast::ForClauseCommand, expand: bool) -> Option<Vec<&str>> {
     if !expand {
         return None;
     }
-    // A variable already bound by an enclosing loop would be shadowed here; leave it
-    // for the normal walk rather than substitute the wrong binding.
-    if active.iter().any(|s| s.var == f.variable_name) {
-        return None;
-    }
     let words = f.values.as_ref()?;
-    let mut values = Vec::with_capacity(words.len());
-    for word in words {
-        values.push(literal_value(&word.value)?);
+    words.iter().map(|w| literal_value(&w.value)).collect()
+}
+
+/// Whether an emitted stage proves the enclosing unroll unfaithful: it still expands
+/// a bound variable after substitution (an unrewritable form like `${f%.txt}`),
+/// reassigns one, or is a var-binding builtin or flow-control keyword.
+pub(crate) fn stage_breaks_unroll(
+    simple: &ast::SimpleCommand,
+    variables: &[String],
+    active: &[Subst],
+) -> bool {
+    if active.iter().any(|s| variables.iter().any(|v| v == s.var)) {
+        return true;
     }
-    // A body that reassigns the loop variable, or can cut the loop short, cannot be
-    // faithfully unrolled into one command per value.
-    if body_disqualifies(&f.body.list, &f.variable_name) {
-        return None;
+    // Var-binding builtins and flow-control keywords, regardless of arguments.
+    if simple.word_or_name.as_ref().is_some_and(|w| {
+        matches!(
+            w.value.as_str(),
+            "read"
+                | "readarray"
+                | "mapfile"
+                | "getopts"
+                | "let"
+                | "eval"
+                | "break"
+                | "continue"
+                | "return"
+                | "exit"
+        )
+    }) {
+        return true;
     }
-    Some(values)
+    prefix_suffix_items(simple).any(|item| match item {
+        ast::CommandPrefixOrSuffixItem::AssignmentWord(a, _) => {
+            active.iter().any(|s| assigns_var(a, s.var))
+        }
+        _ => false,
+    })
+}
+
+fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {
+    match &assignment.name {
+        ast::AssignmentName::VariableName(n) | ast::AssignmentName::ArrayElementName(n, _) => {
+            n == var
+        }
+    }
+}
+
+/// Whether arithmetic text reads or assigns any bound variable (`(( f++ ))`), which
+/// the walk cannot see through a stage: arithmetic emits none.
+pub(crate) fn mentions_any(text: &str, active: &[Subst]) -> bool {
+    active.iter().any(|s| mentions_identifier(text, s.var))
+}
+
+/// Whether `text` contains `ident` as a whole identifier token (`$f`, `f+1`, `${f%x}`
+/// all match `f`; `find`, `$foo` do not). Deliberately conservative: a false positive
+/// only skips an unroll.
+pub(crate) fn mentions_identifier(text: &str, ident: &str) -> bool {
+    text.match_indices(ident).any(|(i, _)| {
+        let before = text[..i].chars().next_back();
+        let after = text[i + ident.len()..].chars().next();
+        !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)
+    })
 }
 
 /// A copy of `simple` with every `$var`/`${var}` in its words replaced by the active
@@ -154,227 +203,5 @@ fn collect_spans<'a>(
             }
             _ => {}
         }
-    }
-}
-
-/// Whether the loop body cannot be faithfully unrolled. Two reasons: it reassigns
-/// `var` (direct assignment, var-setting builtin, nested `for` over the same name, or
-/// arithmetic, which can assign anything), or it contains flow control
-/// (`break`/`continue`/`return`/`exit`) that changes how many iterations run.
-fn body_disqualifies(list: &ast::CompoundList, var: &str) -> bool {
-    list.0.iter().any(|item| and_or_disqualifies(&item.0, var))
-}
-
-fn and_or_disqualifies(list: &ast::AndOrList, var: &str) -> bool {
-    pipeline_disqualifies(&list.first, var)
-        || list.additional.iter().any(|a| match a {
-            ast::AndOr::And(p) | ast::AndOr::Or(p) => pipeline_disqualifies(p, var),
-        })
-}
-
-fn pipeline_disqualifies(pipeline: &ast::Pipeline, var: &str) -> bool {
-    pipeline.seq.iter().any(|c| command_disqualifies(c, var))
-}
-
-fn command_disqualifies(command: &ast::Command, var: &str) -> bool {
-    match command {
-        ast::Command::Simple(s) => simple_disqualifies(s, var),
-        ast::Command::Compound(c, _) => compound_disqualifies(c, var),
-        // A function body runs when later called, not per iteration.
-        ast::Command::Function(_) | ast::Command::ExtendedTest(_, _) => false,
-    }
-}
-
-fn simple_disqualifies(simple: &ast::SimpleCommand, var: &str) -> bool {
-    let assigns = simple
-        .prefix
-        .iter()
-        .flat_map(|p| p.0.iter())
-        .chain(simple.suffix.iter().flat_map(|s| s.0.iter()))
-        .any(|item| match item {
-            ast::CommandPrefixOrSuffixItem::AssignmentWord(a, _) => assigns_var(a, var),
-            _ => false,
-        });
-    // Builtins that bind a variable from their arguments, and keywords that alter loop
-    // flow; both are treated conservatively regardless of arguments.
-    let name_disqualifies = simple.word_or_name.as_ref().is_some_and(|w| {
-        matches!(
-            w.value.as_str(),
-            "read"
-                | "readarray"
-                | "mapfile"
-                | "getopts"
-                | "let"
-                | "eval"
-                | "break"
-                | "continue"
-                | "return"
-                | "exit"
-        )
-    });
-    assigns || name_disqualifies || simple_has_unrewritable_ref(simple, var)
-}
-
-/// Whether any word of the command references `var` in a form the span substitution
-/// cannot rewrite. Unrolling eliminates the binding, so such a reference would dangle.
-fn simple_has_unrewritable_ref(simple: &ast::SimpleCommand, var: &str) -> bool {
-    if simple
-        .word_or_name
-        .as_ref()
-        .is_some_and(|w| word_blocks(&w.value, var))
-    {
-        return true;
-    }
-    simple
-        .prefix
-        .iter()
-        .flat_map(|p| p.0.iter())
-        .chain(simple.suffix.iter().flat_map(|s| s.0.iter()))
-        .any(|item| item_blocks(item, var))
-}
-
-fn item_blocks(item: &ast::CommandPrefixOrSuffixItem, var: &str) -> bool {
-    use ast::CommandPrefixOrSuffixItem as I;
-    match item {
-        I::Word(w) | I::AssignmentWord(_, w) => word_blocks(&w.value, var),
-        I::IoRedirect(r) => redirect_blocks(r, var),
-        I::ProcessSubstitution(_, sub) => mentions_identifier(&sub.list.to_string(), var),
-    }
-}
-
-#[allow(clippy::match_same_arms)]
-fn redirect_blocks(redirect: &ast::IoRedirect, var: &str) -> bool {
-    use ast::IoFileRedirectTarget as T;
-    use ast::IoRedirect as R;
-    match redirect {
-        R::File(_, _, T::Filename(w) | T::Duplicate(w)) => word_blocks(&w.value, var),
-        R::File(_, _, T::Fd(_)) => false,
-        R::File(_, _, T::ProcessSubstitution(_, sub)) => {
-            mentions_identifier(&sub.list.to_string(), var)
-        }
-        R::OutputAndError(w, _) | R::HereString(_, w) => word_blocks(&w.value, var),
-        R::HereDocument(_, doc) if doc.requires_expansion => word_blocks(&doc.doc.value, var),
-        R::HereDocument(_, _) => false,
-    }
-}
-
-/// Whether `word` references `var` anywhere other than a plain `$var` / `${var}` (the
-/// only forms the span substitution rewrites). Unparseable words block conservatively.
-fn word_blocks(word: &str, var: &str) -> bool {
-    match word::parse(word, &ParserOptions::default()) {
-        Ok(pieces) => pieces_block(&pieces, var),
-        Err(_) => true,
-    }
-}
-
-fn pieces_block(pieces: &[WordPieceWithSource], var: &str) -> bool {
-    pieces.iter().any(|piece| match &piece.piece {
-        // Plain `$var` / `${var}`: the substitution rewrites these, so they never dangle.
-        WordPiece::ParameterExpansion(ParameterExpr::Parameter {
-            parameter: Parameter::Named(_),
-            indirect: false,
-        }) => false,
-        // Any other parameter expansion (operator, index, indirection) that touches var.
-        WordPiece::ParameterExpansion(expr) => expr_refs_var(expr, var),
-        WordPiece::DoubleQuotedSequence(inner) | WordPiece::GettextDoubleQuotedSequence(inner) => {
-            pieces_block(inner, var)
-        }
-        // We do not descend into these, so any mention of var would dangle.
-        WordPiece::CommandSubstitution(s) | WordPiece::BackquotedCommandSubstitution(s) => {
-            mentions_identifier(s, var)
-        }
-        WordPiece::ArithmeticExpression(a) => mentions_identifier(&a.value, var),
-        _ => false,
-    })
-}
-
-/// Whether `word` references `var` in any form at all (used for parameter-expansion
-/// value/pattern words, which the substitution never rewrites).
-fn word_refs_var(word: &str, var: &str) -> bool {
-    match word::parse(word, &ParserOptions::default()) {
-        Ok(pieces) => pieces_ref_var(&pieces, var),
-        Err(_) => true,
-    }
-}
-
-fn pieces_ref_var(pieces: &[WordPieceWithSource], var: &str) -> bool {
-    pieces.iter().any(|piece| match &piece.piece {
-        WordPiece::ParameterExpansion(expr) => expr_refs_var(expr, var),
-        WordPiece::DoubleQuotedSequence(inner) | WordPiece::GettextDoubleQuotedSequence(inner) => {
-            pieces_ref_var(inner, var)
-        }
-        WordPiece::CommandSubstitution(s) | WordPiece::BackquotedCommandSubstitution(s) => {
-            mentions_identifier(s, var)
-        }
-        WordPiece::ArithmeticExpression(a) => mentions_identifier(&a.value, var),
-        _ => false,
-    })
-}
-
-fn expr_refs_var(expr: &ParameterExpr, var: &str) -> bool {
-    if param_of(expr).is_some_and(|p| param_name(p) == var) {
-        return true;
-    }
-    if param_subscript(expr).is_some_and(|index| mentions_identifier(index, var)) {
-        return true;
-    }
-    let mut hit = false;
-    collect_param_expr_words(expr, |w| {
-        hit = hit || word_refs_var(w, var);
-    });
-    hit
-}
-
-/// Whether `text` contains `ident` as a whole identifier token (`$f`, `f+1`, `${f%x}`
-/// all match `f`; `find`, `$foo` do not). Used for arithmetic and substitution bodies,
-/// where a match is deliberately conservative: a false positive only skips an unroll.
-fn mentions_identifier(text: &str, ident: &str) -> bool {
-    text.match_indices(ident).any(|(i, _)| {
-        let before = text[..i].chars().next_back();
-        let after = text[i + ident.len()..].chars().next();
-        !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)
-    })
-}
-
-fn is_ident_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
-fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {
-    match &assignment.name {
-        ast::AssignmentName::VariableName(n) | ast::AssignmentName::ArrayElementName(n, _) => {
-            n == var
-        }
-    }
-}
-
-fn compound_disqualifies(compound: &ast::CompoundCommand, var: &str) -> bool {
-    use ast::CompoundCommand as C;
-    match compound {
-        C::Subshell(s) => body_disqualifies(&s.list, var),
-        C::BraceGroup(b) => body_disqualifies(&b.list, var),
-        // A nested loop over the same name rebinds it; otherwise scan its body.
-        C::ForClause(f) => f.variable_name == var || body_disqualifies(&f.body.list, var),
-        C::WhileClause(w) | C::UntilClause(w) => {
-            body_disqualifies(&w.0, var) || body_disqualifies(&w.1.list, var)
-        }
-        C::IfClause(i) => {
-            body_disqualifies(&i.condition, var)
-                || body_disqualifies(&i.then, var)
-                || i.elses.iter().flatten().any(|e| {
-                    e.condition
-                        .as_ref()
-                        .is_some_and(|c| body_disqualifies(c, var))
-                        || body_disqualifies(&e.body, var)
-                })
-        }
-        C::CaseClause(c) => c.cases.iter().any(|item| {
-            item.cmd
-                .as_ref()
-                .is_some_and(|cmd| body_disqualifies(cmd, var))
-        }),
-        C::Coprocess(c) => command_disqualifies(&c.body, var),
-        // Arithmetic assignment (`(( f=1 ))`, `for (( ))`) can set any variable.
-        C::Arithmetic(_) | C::ArithmeticForClause(_) => true,
     }
 }

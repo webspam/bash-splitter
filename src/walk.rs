@@ -16,11 +16,19 @@ pub(crate) struct Ctx<'a> {
     out: &'a mut Vec<Walked>,
     subs: &'a mut Vec<Sub>,
     expand: bool,
+    /// Set when something under an unroll attempt proves it unfaithful; the
+    /// attempt rolls back and re-walks the loop as a single body.
+    poisoned: bool,
 }
 
 impl<'a> Ctx<'a> {
     pub(crate) fn new(out: &'a mut Vec<Walked>, subs: &'a mut Vec<Sub>, expand: bool) -> Self {
-        Ctx { out, subs, expand }
+        Ctx {
+            out,
+            subs,
+            expand,
+            poisoned: false,
+        }
     }
 }
 
@@ -31,6 +39,10 @@ pub(crate) fn walk_compound_list(
     active: &[Subst],
 ) {
     for item in &list.0 {
+        // A poisoned unroll attempt will be discarded
+        if ctx.poisoned {
+            return;
+        }
         walk_and_or_list(&item.0, in_loop, ctx, active);
     }
 }
@@ -69,6 +81,10 @@ fn walk_command(
                 substituted = expand::substitute_simple(simple, active);
                 &substituted
             };
+            let variables = simple_vars(simple);
+            if !active.is_empty() && expand::stage_breaks_unroll(simple, &variables, active) {
+                ctx.poisoned = true;
+            }
             let id = ctx.out.len();
             ctx.out.push(Walked {
                 command: simple.to_string(),
@@ -77,7 +93,7 @@ fn walk_command(
                 args: suffix_args(simple),
                 redirects: simple_redirects(simple),
                 in_loop,
-                variables: simple_vars(simple),
+                variables,
                 parent: None,
                 children: Vec::new(),
                 piped_from_previous,
@@ -93,8 +109,14 @@ fn walk_command(
             collect_redirect_list_subs(redirects.as_ref(), ctx.subs);
         }
         // The body runs when the function is later called, not per-iteration of any
-        // enclosing loop, so reset the loop context.
-        ast::Command::Function(f) => walk_compound_command(&f.body.0, false, ctx, active),
+        // enclosing loop: reset the loop context, and never bake an iteration's
+        // value into the definition.
+        ast::Command::Function(f) => {
+            if !active.is_empty() {
+                ctx.poisoned = true;
+            }
+            walk_compound_command(&f.body.0, false, ctx, &[])
+        }
         // `[[ ... ]]` runs no command, but its words and redirects can hide substitutions.
         ast::Command::ExtendedTest(e, redirects) => {
             collect_extended_test_subs(&e.expr, ctx.subs);
@@ -117,23 +139,23 @@ fn walk_compound_command(
         C::Subshell(s) => walk_compound_list(&s.list, in_loop, ctx, active),
         C::BraceGroup(b) => walk_compound_list(&b.list, in_loop, ctx, active),
         C::ForClause(f) => {
-            if let Some(values) = expand::for_values(f, ctx.expand, active) {
-                // Static loop: unroll, binding the variable to each literal in turn.
-                for value in values {
-                    let mut bound = active.to_vec();
-                    bound.push(Subst {
-                        var: &f.variable_name,
-                        value,
-                    });
-                    walk_compound_list(&f.body.list, true, ctx, &bound);
-                }
-            } else {
-                // The iterated values can hide substitutions (`for x in $(cmd)`).
-                for value in f.values.iter().flatten() {
-                    collect_word_subs(&value.value, None, ctx.subs);
-                }
-                walk_compound_list(&f.body.list, true, ctx, active);
+            // Re-binding a variable an enclosing unroll holds shadows it; that
+            // unroll cannot be faithful. Once it falls back, this loop gets its
+            // own clean unroll attempt.
+            if active.iter().any(|s| s.var == f.variable_name) {
+                ctx.poisoned = true;
             }
+            if !ctx.poisoned
+                && let Some(values) = expand::for_values(f, ctx.expand)
+                && try_unroll(f, &values, ctx, active)
+            {
+                return;
+            }
+            // The iterated values can hide substitutions (`for x in $(cmd)`).
+            for value in f.values.iter().flatten() {
+                collect_word_subs(&value.value, None, ctx.subs);
+            }
+            walk_compound_list(&f.body.list, true, ctx, active);
         }
         // The init/cond/update expressions are arithmetic, and arithmetic is
         // command-substituted (`for ((i=$(cmd); ...))`); scan them, then the body.
@@ -142,6 +164,9 @@ fn walk_compound_command(
                 .into_iter()
                 .flatten()
             {
+                if expand::mentions_any(&expr.value, active) {
+                    ctx.poisoned = true;
+                }
                 collect_word_subs(&expr.value, None, ctx.subs);
             }
             walk_compound_list(&f.body.list, true, ctx, active);
@@ -175,9 +200,49 @@ fn walk_compound_command(
         }
         C::Coprocess(c) => walk_command(&c.body, false, in_loop, ctx, active),
         // No command to *run*, but arithmetic is command-substituted before it is
-        // evaluated, so `(( x=$(cmd) ))` runs cmd.
-        C::Arithmetic(a) => collect_word_subs(&a.expr.value, None, ctx.subs),
+        // evaluated, so `(( x=$(cmd) ))` runs cmd. It can also read or assign a
+        // bound variable while emitting no stage the unroll checks could see.
+        C::Arithmetic(a) => {
+            if expand::mentions_any(&a.expr.value, active) {
+                ctx.poisoned = true;
+            }
+            collect_word_subs(&a.expr.value, None, ctx.subs)
+        }
     }
+}
+
+/// Walks the loop body once per literal, each pass with the variable bound. Anything
+/// emitted that proves the unroll unfaithful poisons it: the attempt is rolled back
+/// (truncated) and `false` returned so the caller walks the loop as a single body.
+/// A problem owed to an *outer* binding re-poisons during that re-walk and cascades.
+fn try_unroll(f: &ast::ForClauseCommand, values: &[&str], ctx: &mut Ctx, active: &[Subst]) -> bool {
+    let start = ctx.out.len();
+    let substart = ctx.subs.len();
+    for value in values {
+        if ctx.poisoned {
+            break;
+        }
+        let mut bound = active.to_vec();
+        bound.push(Subst {
+            var: &f.variable_name,
+            value,
+        });
+        walk_compound_list(&f.body.list, true, ctx, &bound);
+    }
+    // A substitution source still naming the variable would surface dangling. This
+    // covers every position subs are collected from, stage-less ones included.
+    if !ctx.poisoned {
+        ctx.poisoned = ctx.subs[substart..]
+            .iter()
+            .any(|s| expand::mentions_identifier(&s.source, &f.variable_name));
+    }
+    if ctx.poisoned {
+        ctx.out.truncate(start);
+        ctx.subs.truncate(substart);
+        ctx.poisoned = false;
+        return false;
+    }
+    true
 }
 
 /// When a grouping is itself a pipeline stage, its first inner command is the one

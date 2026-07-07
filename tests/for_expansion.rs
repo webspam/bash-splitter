@@ -136,6 +136,57 @@ fn command_substitution_without_var_still_expands() {
     );
 }
 
+#[test]
+fn substitution_in_extended_test_blocks_expansion() {
+    // `[[ ]]` emits no stage, but the hidden `cmd $f` would surface dangling.
+    let cmds = split("for f in a b; do [[ -n $(cmd $f) ]]; done");
+    assert_eq!(commands(&cmds), ["cmd $f"]);
+}
+
+#[test]
+fn substitution_in_case_value_blocks_expansion() {
+    let cmds = split("for f in a b; do case $(kind $f) in x) run x;; esac; done");
+    assert_eq!(commands(&cmds), ["run x", "kind $f"]);
+}
+
+#[test]
+fn substitution_in_nested_for_values_blocks_expansion() {
+    let cmds = split("for f in a b; do for g in $(list $f); do echo $g; done; done");
+    assert_eq!(commands(&cmds), ["echo $g", "list $f"]);
+}
+
+#[test]
+fn substitution_in_compound_redirect_blocks_expansion() {
+    let cmds = split("for f in a b; do { ls; } > $(dir $f); done");
+    assert_eq!(commands(&cmds), ["ls", "dir $f"]);
+}
+
+#[test]
+fn arithmetic_command_on_loop_var_blocks_expansion() {
+    // `(( i+=1 ))` reassigns i but emits no stage; it must still block.
+    let cmds = split("for i in 1 2; do ((i+=1)); echo $i; done");
+    assert_eq!(commands(&cmds), ["echo $i"]);
+}
+
+#[test]
+fn arithmetic_command_on_other_var_still_expands() {
+    let cmds = split("for f in a b; do ((x++)); echo $f; done");
+    assert_eq!(commands(&cmds), ["echo a", "echo b"]);
+}
+
+#[test]
+fn function_definition_blocks_expansion() {
+    // The body runs at call time, so an iteration's value must not bake in.
+    let cmds = split("for f in a b; do g() { echo $f; }; done");
+    assert_eq!(commands(&cmds), ["echo $f"]);
+}
+
+#[test]
+fn shadowed_inner_loop_unrolls_after_outer_falls_back() {
+    let cmds = split("for f in a b; do for f in x y; do echo $f; done; done");
+    assert_eq!(commands(&cmds), ["echo x", "echo y"]);
+}
+
 // ---- non-static loops are left as a single body ----
 
 #[test]
