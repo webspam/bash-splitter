@@ -35,13 +35,19 @@ pub(crate) fn suffix_args(simple: &ast::SimpleCommand) -> Vec<String> {
     out
 }
 
+/// All prefix then suffix items, in source order.
+pub(crate) fn prefix_suffix_items(
+    simple: &ast::SimpleCommand,
+) -> impl Iterator<Item = &ast::CommandPrefixOrSuffixItem> {
+    let prefix = simple.prefix.iter().flat_map(|p| &p.0);
+    let suffix = simple.suffix.iter().flat_map(|s| &s.0);
+    prefix.chain(suffix)
+}
+
 /// The command's I/O redirects, prefix then suffix, in source order. Process
 /// substitutions inside them surface separately as their own pipelines.
 pub(crate) fn simple_redirects(simple: &ast::SimpleCommand) -> Vec<Redirect> {
-    let prefix = simple.prefix.iter().flat_map(|p| &p.0);
-    let suffix = simple.suffix.iter().flat_map(|s| &s.0);
-    prefix
-        .chain(suffix)
+    prefix_suffix_items(simple)
         .filter_map(|item| match item {
             ast::CommandPrefixOrSuffixItem::IoRedirect(r) => Some(redirect_of(r)),
             _ => None,
@@ -53,12 +59,10 @@ pub(crate) fn simple_redirects(simple: &ast::SimpleCommand) -> Vec<Redirect> {
 /// assignments, name, args, and redirect targets/heredoc bodies.
 pub(crate) fn simple_vars(simple: &ast::SimpleCommand) -> Vec<String> {
     let mut vars = Vec::new();
-    let prefix = simple.prefix.iter().flat_map(|p| &p.0);
-    let suffix = simple.suffix.iter().flat_map(|s| &s.0);
     if let Some(name) = &simple.word_or_name {
         collect_word_vars(&name.value, &mut vars);
     }
-    for item in prefix.chain(suffix) {
+    for item in prefix_suffix_items(simple) {
         match item {
             ast::CommandPrefixOrSuffixItem::Word(w)
             | ast::CommandPrefixOrSuffixItem::AssignmentWord(_, w) => {
@@ -76,9 +80,7 @@ pub(crate) fn simple_vars(simple: &ast::SimpleCommand) -> Vec<String> {
 /// substitutions in its words, the bodies of process substitutions, and anything in
 /// its redirects. Each is tagged with `parent`, the `id` of the stage it is emitted as.
 pub(crate) fn collect_simple_subs(simple: &ast::SimpleCommand, parent: usize, subs: &mut Vec<Sub>) {
-    let prefix = simple.prefix.iter().flat_map(|p| &p.0);
-    let suffix = simple.suffix.iter().flat_map(|s| &s.0);
-    for item in prefix.chain(suffix) {
+    for item in prefix_suffix_items(simple) {
         match item {
             ast::CommandPrefixOrSuffixItem::Word(w)
             | ast::CommandPrefixOrSuffixItem::AssignmentWord(_, w) => {
