@@ -7,6 +7,8 @@ use brush_parser::ParserOptions;
 use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
 
+use crate::params::{collect_param_expr_words, param_name, param_of, param_subscript};
+
 /// An active loop binding: the variable and the literal it currently expands to.
 #[derive(Clone, Copy)]
 pub(crate) struct Subst<'a> {
@@ -210,7 +212,132 @@ fn simple_disqualifies(simple: &ast::SimpleCommand, var: &str) -> bool {
                 | "exit"
         )
     });
-    assigns || name_disqualifies
+    assigns || name_disqualifies || simple_has_unrewritable_ref(simple, var)
+}
+
+/// Whether any word of the command references `var` in a form the span substitution
+/// cannot rewrite. Unrolling eliminates the binding, so such a reference would dangle.
+fn simple_has_unrewritable_ref(simple: &ast::SimpleCommand, var: &str) -> bool {
+    if simple
+        .word_or_name
+        .as_ref()
+        .is_some_and(|w| word_blocks(&w.value, var))
+    {
+        return true;
+    }
+    simple
+        .prefix
+        .iter()
+        .flat_map(|p| p.0.iter())
+        .chain(simple.suffix.iter().flat_map(|s| s.0.iter()))
+        .any(|item| item_blocks(item, var))
+}
+
+fn item_blocks(item: &ast::CommandPrefixOrSuffixItem, var: &str) -> bool {
+    use ast::CommandPrefixOrSuffixItem as I;
+    match item {
+        I::Word(w) | I::AssignmentWord(_, w) => word_blocks(&w.value, var),
+        I::IoRedirect(r) => redirect_blocks(r, var),
+        I::ProcessSubstitution(_, sub) => mentions_identifier(&sub.list.to_string(), var),
+    }
+}
+
+#[allow(clippy::match_same_arms)]
+fn redirect_blocks(redirect: &ast::IoRedirect, var: &str) -> bool {
+    use ast::IoFileRedirectTarget as T;
+    use ast::IoRedirect as R;
+    match redirect {
+        R::File(_, _, T::Filename(w) | T::Duplicate(w)) => word_blocks(&w.value, var),
+        R::File(_, _, T::Fd(_)) => false,
+        R::File(_, _, T::ProcessSubstitution(_, sub)) => {
+            mentions_identifier(&sub.list.to_string(), var)
+        }
+        R::OutputAndError(w, _) | R::HereString(_, w) => word_blocks(&w.value, var),
+        R::HereDocument(_, doc) if doc.requires_expansion => word_blocks(&doc.doc.value, var),
+        R::HereDocument(_, _) => false,
+    }
+}
+
+/// Whether `word` references `var` anywhere other than a plain `$var` / `${var}` (the
+/// only forms the span substitution rewrites). Unparseable words block conservatively.
+fn word_blocks(word: &str, var: &str) -> bool {
+    match word::parse(word, &ParserOptions::default()) {
+        Ok(pieces) => pieces_block(&pieces, var),
+        Err(_) => true,
+    }
+}
+
+fn pieces_block(pieces: &[WordPieceWithSource], var: &str) -> bool {
+    pieces.iter().any(|piece| match &piece.piece {
+        // Plain `$var` / `${var}`: the substitution rewrites these, so they never dangle.
+        WordPiece::ParameterExpansion(ParameterExpr::Parameter {
+            parameter: Parameter::Named(_),
+            indirect: false,
+        }) => false,
+        // Any other parameter expansion (operator, index, indirection) that touches var.
+        WordPiece::ParameterExpansion(expr) => expr_refs_var(expr, var),
+        WordPiece::DoubleQuotedSequence(inner) | WordPiece::GettextDoubleQuotedSequence(inner) => {
+            pieces_block(inner, var)
+        }
+        // We do not descend into these, so any mention of var would dangle.
+        WordPiece::CommandSubstitution(s) | WordPiece::BackquotedCommandSubstitution(s) => {
+            mentions_identifier(s, var)
+        }
+        WordPiece::ArithmeticExpression(a) => mentions_identifier(&a.value, var),
+        _ => false,
+    })
+}
+
+/// Whether `word` references `var` in any form at all (used for parameter-expansion
+/// value/pattern words, which the substitution never rewrites).
+fn word_refs_var(word: &str, var: &str) -> bool {
+    match word::parse(word, &ParserOptions::default()) {
+        Ok(pieces) => pieces_ref_var(&pieces, var),
+        Err(_) => true,
+    }
+}
+
+fn pieces_ref_var(pieces: &[WordPieceWithSource], var: &str) -> bool {
+    pieces.iter().any(|piece| match &piece.piece {
+        WordPiece::ParameterExpansion(expr) => expr_refs_var(expr, var),
+        WordPiece::DoubleQuotedSequence(inner) | WordPiece::GettextDoubleQuotedSequence(inner) => {
+            pieces_ref_var(inner, var)
+        }
+        WordPiece::CommandSubstitution(s) | WordPiece::BackquotedCommandSubstitution(s) => {
+            mentions_identifier(s, var)
+        }
+        WordPiece::ArithmeticExpression(a) => mentions_identifier(&a.value, var),
+        _ => false,
+    })
+}
+
+fn expr_refs_var(expr: &ParameterExpr, var: &str) -> bool {
+    if param_of(expr).is_some_and(|p| param_name(p) == var) {
+        return true;
+    }
+    if param_subscript(expr).is_some_and(|index| mentions_identifier(index, var)) {
+        return true;
+    }
+    let mut hit = false;
+    collect_param_expr_words(expr, |w| {
+        hit = hit || word_refs_var(w, var);
+    });
+    hit
+}
+
+/// Whether `text` contains `ident` as a whole identifier token (`$f`, `f+1`, `${f%x}`
+/// all match `f`; `find`, `$foo` do not). Used for arithmetic and substitution bodies,
+/// where a match is deliberately conservative: a false positive only skips an unroll.
+fn mentions_identifier(text: &str, ident: &str) -> bool {
+    text.match_indices(ident).any(|(i, _)| {
+        let before = text[..i].chars().next_back();
+        let after = text[i + ident.len()..].chars().next();
+        !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)
+    })
+}
+
+fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {

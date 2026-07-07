@@ -43,5 +43,6 @@ Only fully-static loops qualify; anything needing real expansion or guesswork is
 | Non-literal values         | `for f in *.txt`, `$(ls)`, `$x`, `"a b"` | Left as one body; a glob, expansion, quote, or brace is not evaluated.               |
 | Reassigned loop variable   | `for f in a b; do f=x; ...`              | Left as one body; a `$f`-rebinding body (`f=`, `read f`, `(( ))`, nested `for f`) is not unrolled. |
 | Flow control               | `for f in a b; do echo $f; break; done`  | Left as one body; `break` / `continue` / `return` / `exit` change how many iterations run.          |
+| Unrewritable reference     | `${f%.txt}`, `${f:-x}`, `$((f+1))`, `$(cmd $f)` | Left as one body; only plain `$f` / `${f}` is substituted, so any other reference to the variable would dangle once the loop is gone. |
 
-Substitution only reaches the body's own words; a `$f` inside a command substitution (`$(grep $f)`) is left for that surfaced command, matching how loop context is otherwise not tracked across substitution boundaries.
+Only plain `$f` / `${f}` (including inside double quotes) is substituted. A loop whose body reaches the variable any other way is left as a single body rather than unrolled with a dangling reference.

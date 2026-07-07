@@ -113,6 +113,43 @@ fn single_quoted_reference_is_left_literal() {
     assert_eq!(commands(&cmds), ["echo '$f'", "echo '$f'"]);
 }
 
+// ---- var referenced in a form we can't rewrite leaves the loop as one body ----
+
+#[test]
+fn parameter_operator_reference_blocks_expansion() {
+    // `${f%.txt}` is not a plain `$f`, so it would dangle if the loop were unrolled.
+    let cmds = split("for f in a b; do echo ${f%.txt}; done");
+    assert_eq!(commands(&cmds), ["echo ${f%.txt}"]);
+}
+
+#[test]
+fn default_value_reference_blocks_expansion() {
+    let cmds = split("for f in a b; do echo ${f:-x}; done");
+    assert_eq!(commands(&cmds), ["echo ${f:-x}"]);
+}
+
+#[test]
+fn arithmetic_reference_blocks_expansion() {
+    let cmds = split("for f in 1 2; do echo $((f + 1)); done");
+    assert_eq!(commands(&cmds), ["echo $((f + 1))"]);
+}
+
+#[test]
+fn command_substitution_referencing_var_blocks_expansion() {
+    let cmds = split("for f in a b; do echo $(grep $f); done");
+    // One body; `grep $f` surfaces as its own pipeline, still referencing `$f`.
+    assert_eq!(commands(&cmds), ["echo $(grep $f)", "grep $f"]);
+}
+
+#[test]
+fn command_substitution_without_var_still_expands() {
+    let cmds = split("for f in a b; do echo $(date); done");
+    assert_eq!(
+        commands(&cmds),
+        ["echo $(date)", "echo $(date)", "date", "date"]
+    );
+}
+
 // ---- non-static loops are left as a single body ----
 
 #[test]
