@@ -11,7 +11,13 @@ use serde_json::Value;
 /// pipelines, each an array of its stages in source order. Panics with the
 /// captured stderr if the process fails or output isn't valid JSON.
 pub fn split_pipelines(input: &str) -> Vec<Vec<Value>> {
+    split_pipelines_with(input, &[])
+}
+
+/// As [`split_pipelines`], but passes extra CLI flags (e.g. `--no-expand`, `-n`).
+pub fn split_pipelines_with(input: &str, args: &[&str]) -> Vec<Vec<Value>> {
     let mut child = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

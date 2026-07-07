@@ -2,29 +2,15 @@
 //! individual commands. Anything needing real expansion is left as a single body.
 
 mod common;
-use common::{args, command_text, in_loop, name, split, variables};
+use common::{args, command_text, in_loop, name, split, split_pipelines_with, variables};
 use serde_json::Value;
-
-use std::io::Write;
-use std::process::{Command, Stdio};
 
 /// Runs the binary with `--no-expand` and returns the flattened stage list.
 fn split_no_expand(input: &str) -> Vec<Value> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
-        .arg("--no-expand")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("spawn");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .expect("write");
-    let output = child.wait_with_output().expect("wait");
-    let pipelines: Vec<Vec<Value>> = serde_json::from_slice(&output.stdout).expect("json");
-    pipelines.into_iter().flatten().collect()
+    split_pipelines_with(input, &["--no-expand"])
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// The reconstructed `command` text of each stage, in source order.
