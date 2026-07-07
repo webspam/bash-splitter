@@ -44,8 +44,8 @@ Only fully-static loops qualify; anything needing real expansion or guesswork is
 | Reassigned loop variable   | `for f in a b; do f=x; ...`              | Left as one body; a `$f`-rebinding body (`f=`, `read f`, `(( f++ ))`, nested `for f`) is not unrolled. |
 | Flow control               | `for f in a b; do echo $f; break; done`  | Left as one body; `break` / `continue` / `return` / `exit` change how many iterations run.          |
 | Function definition        | `for f in a b; do g() { ...; }; done`    | Left as one body; the function body runs at call time, not per iteration.            |
-| Unrewritable reference     | `${f%.txt}`, `${f:-x}`, `$((f+1))`, `$(cmd $f)` | Left as one body; only plain `$f` / `${f}` is substituted, so any other reference to the variable would dangle once the loop is gone. |
+| Unrewritable reference     | `${f%.txt}`, `${f:-x}`, `$((f+1))`, `$(cmd $f)` | Left as one body; only plain `$f` / `${f}` is substituted, so any other form would still mention `f` in the output with the loop that defined it gone. |
 
-Only plain `$f` / `${f}` (including inside double quotes) is substituted. A loop whose body reaches the variable any other way in a position that appears in the output (command words, redirects, substitution bodies) is left as a single body rather than unrolled with a dangling reference.
+Only plain `$f` / `${f}` (including inside double quotes) is substituted. A loop whose body reaches the variable any other way in a position that appears in the output (command words, redirects, substitution bodies) is left as a single body, rather than unrolled into output that still mentions the now-removed variable.
 
-A bare `$f` in a position the splitter never outputs (a `[[ ]]` word, a `case` dispatch value) does not block unrolling: nothing dangles, but the output lists every branch's commands per iteration even though each iteration runs only one. Branches are always over-reported this way, unrolled or not.
+A bare `$f` in a position the splitter never outputs (a `[[ ]]` word, a `case` dispatch value) does not block unrolling: no leftover `$f` can appear in the output, but the output lists every branch's commands per iteration even though each iteration runs only one. Branches are always over-reported this way, unrolled or not.

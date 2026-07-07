@@ -103,7 +103,8 @@ fn single_quoted_reference_is_left_literal() {
 
 #[test]
 fn parameter_operator_reference_blocks_expansion() {
-    // `${f%.txt}` is not a plain `$f`, so it would dangle if the loop were unrolled.
+    // `${f%.txt}` is not a plain `$f`, so it would survive unsubstituted if the loop
+    // were unrolled.
     let cmds = split("for f in a b; do echo ${f%.txt}; done");
     assert_eq!(commands(&cmds), ["echo ${f%.txt}"]);
 }
@@ -138,7 +139,7 @@ fn command_substitution_without_var_still_expands() {
 
 #[test]
 fn substitution_in_extended_test_blocks_expansion() {
-    // `[[ ]]` emits no stage, but the hidden `cmd $f` would surface dangling.
+    // `[[ ]]` emits no stage, but the hidden `cmd $f` would surface still naming `f`.
     let cmds = split("for f in a b; do [[ -n $(cmd $f) ]]; done");
     assert_eq!(commands(&cmds), ["cmd $f"]);
 }

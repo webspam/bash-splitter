@@ -229,8 +229,9 @@ fn try_unroll(f: &ast::ForClauseCommand, values: &[&str], ctx: &mut Ctx, active:
         });
         walk_compound_list(&f.body.list, true, ctx, &bound);
     }
-    // A substitution source still naming the variable would surface dangling. This
-    // covers every position subs are collected from, stage-less ones included.
+    // A substitution source still naming the variable would surface as a stage
+    // mentioning it after the loop defining it is gone. This covers every position
+    // subs are collected from, stage-less ones included.
     if !ctx.poisoned {
         ctx.poisoned = ctx.subs[substart..]
             .iter()
