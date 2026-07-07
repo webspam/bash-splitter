@@ -6,7 +6,7 @@ use crate::redirect::collect_redirect_list_subs;
 use crate::simple::{
     collect_simple_subs, prefix_assignments, simple_redirects, simple_vars, suffix_args,
 };
-use crate::types::{Sub, Walked};
+use crate::types::{Stage, Sub, Walked};
 use crate::word::collect_word_subs;
 
 /// The walk's shared state: the stages walked out so far, the substitutions still to
@@ -87,13 +87,15 @@ fn walk_command(
             }
             let id = ctx.out.len();
             ctx.out.push(Walked {
-                command: simple.to_string(),
-                assignments: prefix_assignments(simple),
-                name: simple.word_or_name.as_ref().map(|w| w.value.clone()),
-                args: suffix_args(simple),
-                redirects: simple_redirects(simple),
-                in_loop,
-                variables,
+                stage: Stage {
+                    command: simple.to_string(),
+                    assignments: prefix_assignments(simple),
+                    name: simple.word_or_name.as_ref().map(|w| w.value.clone()),
+                    args: suffix_args(simple),
+                    redirects: simple_redirects(simple),
+                    in_loop,
+                    variables,
+                },
                 parent: None,
                 children: Vec::new(),
                 piped_from_previous,

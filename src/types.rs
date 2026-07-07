@@ -2,7 +2,7 @@ use serde::Serialize;
 
 /// One command: a single stage of a pipeline (flat mode).
 /// All commands appear as top-level pipelines, including those surfaced from substitutions.
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Stage {
     /// Reconstructed text of this single command.
     pub(crate) command: String,
@@ -41,21 +41,6 @@ pub struct NestedStage {
     pub(crate) substitutions: Vec<Vec<NestedStage>>,
 }
 
-impl Stage {
-    /// Builds a stage from a walked command, dropping its internal pipeline bookkeeping.
-    pub(crate) fn from_walked(cmd: &Walked) -> Self {
-        Stage {
-            command: cmd.command.clone(),
-            assignments: cmd.assignments.clone(),
-            name: cmd.name.clone(),
-            args: cmd.args.clone(),
-            redirects: cmd.redirects.clone(),
-            in_loop: cmd.in_loop,
-            variables: cmd.variables.clone(),
-        }
-    }
-}
-
 /// One I/O redirect on a command. `kind` tags the target family: `file`, `fd`,
 /// `process_sub`, `herestring`, `heredoc`.
 #[derive(Clone, Serialize)]
@@ -89,13 +74,7 @@ pub(crate) struct HereDoc {
 
 /// A walked command plus internal bookkeeping used to group stages into pipelines.
 pub(crate) struct Walked {
-    pub(crate) command: String,
-    pub(crate) assignments: Vec<String>,
-    pub(crate) name: Option<String>,
-    pub(crate) args: Vec<String>,
-    pub(crate) redirects: Vec<Redirect>,
-    pub(crate) in_loop: bool,
-    pub(crate) variables: Vec<String>,
+    pub(crate) stage: Stage,
     pub(crate) parent: Option<usize>,
     pub(crate) children: Vec<usize>,
     pub(crate) piped_from_previous: bool,

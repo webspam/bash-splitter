@@ -44,7 +44,7 @@ fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<Sub>, expand:
 pub(crate) fn group_into_pipelines(commands: &[Walked]) -> Vec<Vec<Stage>> {
     let mut pipelines: Vec<Vec<Stage>> = Vec::new();
     for cmd in commands {
-        let stage = Stage::from_walked(cmd);
+        let stage = cmd.stage.clone();
         match pipelines.last_mut() {
             Some(current) if cmd.piped_from_previous => current.push(stage),
             _ => pipelines.push(vec![stage]),
@@ -89,7 +89,7 @@ fn build_nested_stage(idx: usize, commands: &[Walked]) -> NestedStage {
     }
 
     NestedStage {
-        stage: Stage::from_walked(cmd),
+        stage: cmd.stage.clone(),
         substitutions,
     }
 }
