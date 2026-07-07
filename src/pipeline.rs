@@ -1,7 +1,7 @@
 use brush_parser::{Parser, ParserOptions};
 
 use crate::types::{NestedStage, Stage, Sub, Walked};
-use crate::walk::walk_compound_list;
+use crate::walk::{Ctx, walk_compound_list};
 
 /// Appends each substitution's commands after the walked ones, level by level so
 /// nested substitutions surface too.
@@ -33,8 +33,9 @@ fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<Sub>, expand:
         return;
     };
     // A re-parsed substitution starts a fresh tree; loop bindings do not cross in.
+    let mut ctx = Ctx::new(out, subs, expand);
     for complete_command in &program.complete_commands {
-        walk_compound_list(complete_command, false, out, subs, expand, &[]);
+        walk_compound_list(complete_command, false, &mut ctx, &[]);
     }
 }
 

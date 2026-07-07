@@ -9,47 +9,46 @@ use crate::simple::{
 use crate::types::{Sub, Walked};
 use crate::word::collect_word_subs;
 
-pub(crate) fn walk_compound_list(
-    list: &ast::CompoundList,
-    in_loop: bool,
-    out: &mut Vec<Walked>,
-    subs: &mut Vec<Sub>,
+/// The walk's shared state: the stages walked out so far, the substitutions still to
+/// surface, and whether static `for` loops should be unrolled. Threaded by `&mut`;
+/// the per-call context (`in_loop`, `active` bindings, pipe position) stays in params.
+pub(crate) struct Ctx<'a> {
+    out: &'a mut Vec<Walked>,
+    subs: &'a mut Vec<Sub>,
     expand: bool,
-    active: &[Subst],
-) {
-    for item in &list.0 {
-        walk_and_or_list(&item.0, in_loop, out, subs, expand, active);
+}
+
+impl<'a> Ctx<'a> {
+    pub(crate) fn new(out: &'a mut Vec<Walked>, subs: &'a mut Vec<Sub>, expand: bool) -> Self {
+        Ctx { out, subs, expand }
     }
 }
 
-fn walk_and_or_list(
-    list: &ast::AndOrList,
+pub(crate) fn walk_compound_list(
+    list: &ast::CompoundList,
     in_loop: bool,
-    out: &mut Vec<Walked>,
-    subs: &mut Vec<Sub>,
-    expand: bool,
+    ctx: &mut Ctx,
     active: &[Subst],
 ) {
-    walk_pipeline(&list.first, in_loop, out, subs, expand, active);
+    for item in &list.0 {
+        walk_and_or_list(&item.0, in_loop, ctx, active);
+    }
+}
+
+fn walk_and_or_list(list: &ast::AndOrList, in_loop: bool, ctx: &mut Ctx, active: &[Subst]) {
+    walk_pipeline(&list.first, in_loop, ctx, active);
     for and_or in &list.additional {
         match and_or {
             ast::AndOr::And(pipeline) | ast::AndOr::Or(pipeline) => {
-                walk_pipeline(pipeline, in_loop, out, subs, expand, active)
+                walk_pipeline(pipeline, in_loop, ctx, active)
             }
         }
     }
 }
 
-fn walk_pipeline(
-    pipeline: &ast::Pipeline,
-    in_loop: bool,
-    out: &mut Vec<Walked>,
-    subs: &mut Vec<Sub>,
-    expand: bool,
-    active: &[Subst],
-) {
+fn walk_pipeline(pipeline: &ast::Pipeline, in_loop: bool, ctx: &mut Ctx, active: &[Subst]) {
     for (i, command) in pipeline.seq.iter().enumerate() {
-        walk_command(command, i > 0, in_loop, out, subs, expand, active);
+        walk_command(command, i > 0, in_loop, ctx, active);
     }
 }
 
@@ -57,9 +56,7 @@ fn walk_command(
     command: &ast::Command,
     piped_from_previous: bool,
     in_loop: bool,
-    out: &mut Vec<Walked>,
-    subs: &mut Vec<Sub>,
-    expand: bool,
+    ctx: &mut Ctx,
     active: &[Subst],
 ) {
     match command {
@@ -72,8 +69,8 @@ fn walk_command(
                 substituted = expand::substitute_simple(simple, active);
                 &substituted
             };
-            let id = out.len();
-            out.push(Walked {
+            let id = ctx.out.len();
+            ctx.out.push(Walked {
                 command: simple.to_string(),
                 assignments: prefix_assignments(simple),
                 name: simple.word_or_name.as_ref().map(|w| w.value.clone()),
@@ -85,25 +82,23 @@ fn walk_command(
                 children: Vec::new(),
                 piped_from_previous,
             });
-            collect_simple_subs(simple, id, subs);
+            collect_simple_subs(simple, id, ctx.subs);
         }
         // Descend so commands nested in the compound surface individually. As a
         // pipeline stage (`foo | (grep x)`), its first inner command takes the pipe.
         ast::Command::Compound(compound, redirects) => {
-            let start = out.len();
-            walk_compound_command(compound, in_loop, out, subs, expand, active);
-            apply_pipe_boundary(&mut out[start..], piped_from_previous);
-            collect_redirect_list_subs(redirects.as_ref(), subs);
+            let start = ctx.out.len();
+            walk_compound_command(compound, in_loop, ctx, active);
+            apply_pipe_boundary(&mut ctx.out[start..], piped_from_previous);
+            collect_redirect_list_subs(redirects.as_ref(), ctx.subs);
         }
         // The body runs when the function is later called, not per-iteration of any
         // enclosing loop, so reset the loop context.
-        ast::Command::Function(f) => {
-            walk_compound_command(&f.body.0, false, out, subs, expand, active)
-        }
+        ast::Command::Function(f) => walk_compound_command(&f.body.0, false, ctx, active),
         // `[[ ... ]]` runs no command, but its words and redirects can hide substitutions.
         ast::Command::ExtendedTest(e, redirects) => {
-            collect_extended_test_subs(&e.expr, subs);
-            collect_redirect_list_subs(redirects.as_ref(), subs);
+            collect_extended_test_subs(&e.expr, ctx.subs);
+            collect_redirect_list_subs(redirects.as_ref(), ctx.subs);
         }
     }
 }
@@ -114,17 +109,15 @@ fn walk_command(
 fn walk_compound_command(
     compound: &ast::CompoundCommand,
     in_loop: bool,
-    out: &mut Vec<Walked>,
-    subs: &mut Vec<Sub>,
-    expand: bool,
+    ctx: &mut Ctx,
     active: &[Subst],
 ) {
     use ast::CompoundCommand as C;
     match compound {
-        C::Subshell(s) => walk_compound_list(&s.list, in_loop, out, subs, expand, active),
-        C::BraceGroup(b) => walk_compound_list(&b.list, in_loop, out, subs, expand, active),
+        C::Subshell(s) => walk_compound_list(&s.list, in_loop, ctx, active),
+        C::BraceGroup(b) => walk_compound_list(&b.list, in_loop, ctx, active),
         C::ForClause(f) => {
-            if let Some(values) = expand::for_values(f, expand, active) {
+            if let Some(values) = expand::for_values(f, ctx.expand, active) {
                 // Static loop: unroll, binding the variable to each literal in turn.
                 for value in values {
                     let mut bound = active.to_vec();
@@ -132,14 +125,14 @@ fn walk_compound_command(
                         var: &f.variable_name,
                         value,
                     });
-                    walk_compound_list(&f.body.list, true, out, subs, expand, &bound);
+                    walk_compound_list(&f.body.list, true, ctx, &bound);
                 }
             } else {
                 // The iterated values can hide substitutions (`for x in $(cmd)`).
                 for value in f.values.iter().flatten() {
-                    collect_word_subs(&value.value, None, subs);
+                    collect_word_subs(&value.value, None, ctx.subs);
                 }
-                walk_compound_list(&f.body.list, true, out, subs, expand, active);
+                walk_compound_list(&f.body.list, true, ctx, active);
             }
         }
         // The init/cond/update expressions are arithmetic, and arithmetic is
@@ -149,41 +142,41 @@ fn walk_compound_command(
                 .into_iter()
                 .flatten()
             {
-                collect_word_subs(&expr.value, None, subs);
+                collect_word_subs(&expr.value, None, ctx.subs);
             }
-            walk_compound_list(&f.body.list, true, out, subs, expand, active);
+            walk_compound_list(&f.body.list, true, ctx, active);
         }
         // Condition list, then `do` body. Both re-run each iteration, so both count.
         C::WhileClause(w) | C::UntilClause(w) => {
-            walk_compound_list(&w.0, true, out, subs, expand, active);
-            walk_compound_list(&w.1.list, true, out, subs, expand, active);
+            walk_compound_list(&w.0, true, ctx, active);
+            walk_compound_list(&w.1.list, true, ctx, active);
         }
         // The condition is itself a command (`if grep -q x; ...`).
         C::IfClause(i) => {
-            walk_compound_list(&i.condition, in_loop, out, subs, expand, active);
-            walk_compound_list(&i.then, in_loop, out, subs, expand, active);
+            walk_compound_list(&i.condition, in_loop, ctx, active);
+            walk_compound_list(&i.then, in_loop, ctx, active);
             for else_clause in i.elses.iter().flatten() {
                 if let Some(condition) = &else_clause.condition {
-                    walk_compound_list(condition, in_loop, out, subs, expand, active);
+                    walk_compound_list(condition, in_loop, ctx, active);
                 }
-                walk_compound_list(&else_clause.body, in_loop, out, subs, expand, active);
+                walk_compound_list(&else_clause.body, in_loop, ctx, active);
             }
         }
         C::CaseClause(c) => {
-            collect_word_subs(&c.value.value, None, subs);
+            collect_word_subs(&c.value.value, None, ctx.subs);
             for item in &c.cases {
                 for pattern in &item.patterns {
-                    collect_word_subs(&pattern.value, None, subs);
+                    collect_word_subs(&pattern.value, None, ctx.subs);
                 }
                 if let Some(cmd) = &item.cmd {
-                    walk_compound_list(cmd, in_loop, out, subs, expand, active);
+                    walk_compound_list(cmd, in_loop, ctx, active);
                 }
             }
         }
-        C::Coprocess(c) => walk_command(&c.body, false, in_loop, out, subs, expand, active),
+        C::Coprocess(c) => walk_command(&c.body, false, in_loop, ctx, active),
         // No command to *run*, but arithmetic is command-substituted before it is
         // evaluated, so `(( x=$(cmd) ))` runs cmd.
-        C::Arithmetic(a) => collect_word_subs(&a.expr.value, None, subs),
+        C::Arithmetic(a) => collect_word_subs(&a.expr.value, None, ctx.subs),
     }
 }
 

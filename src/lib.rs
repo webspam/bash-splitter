@@ -17,7 +17,7 @@ use brush_parser::{Parser, ParserOptions};
 use pipeline::{build_nested_pipelines, expand_substitutions, group_into_pipelines};
 use types::Walked;
 pub use types::{NestedStage, Stage};
-use walk::walk_compound_list;
+use walk::{Ctx, walk_compound_list};
 
 /// A parse error from the input command.
 #[derive(Debug)]
@@ -66,14 +66,8 @@ fn walk_and_expand(input: &str, expand: bool) -> Result<Vec<Walked>, ParseError>
     let mut commands = Vec::new();
     let mut subs = Vec::new();
     for complete_command in &program.complete_commands {
-        walk_compound_list(
-            complete_command,
-            false,
-            &mut commands,
-            &mut subs,
-            expand,
-            &[],
-        );
+        let mut ctx = Ctx::new(&mut commands, &mut subs, expand);
+        walk_compound_list(complete_command, false, &mut ctx, &[]);
     }
     expand_substitutions(&mut commands, subs, expand);
 
