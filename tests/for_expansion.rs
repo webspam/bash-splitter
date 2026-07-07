@@ -141,6 +141,45 @@ fn reassigned_variable_blocks_expansion() {
 }
 
 #[test]
+fn break_blocks_expansion() {
+    // `break` exits after the first iteration, so later iterations never run;
+    // unrolling them would be wrong. Leave the loop as a single body.
+    let cmds = split("for f in a b c; do echo $f; break; done");
+    assert_eq!(commands(&cmds), ["echo $f", "break"]);
+}
+
+#[test]
+fn continue_blocks_expansion() {
+    let cmds = split("for f in a b; do continue; echo $f; done");
+    assert_eq!(commands(&cmds), ["continue", "echo $f"]);
+}
+
+#[test]
+fn return_blocks_expansion() {
+    let cmds = split("for f in a b; do echo $f; return; done");
+    assert_eq!(commands(&cmds), ["echo $f", "return"]);
+}
+
+#[test]
+fn exit_blocks_expansion() {
+    let cmds = split("for f in a b; do echo $f; exit; done");
+    assert_eq!(commands(&cmds), ["echo $f", "exit"]);
+}
+
+#[test]
+fn break_nested_in_condition_blocks_expansion() {
+    let cmds = split("for f in a b; do if grep -q x y; then break; fi; done");
+    assert_eq!(commands(&cmds), ["grep -q x y", "break"]);
+}
+
+#[test]
+fn break_as_argument_does_not_block_expansion() {
+    // `break` here is an argument to echo, not the flow-control keyword.
+    let cmds = split("for f in a b; do echo break; done");
+    assert_eq!(commands(&cmds), ["echo break", "echo break"]);
+}
+
+#[test]
 fn variable_valued_loop_is_not_expanded() {
     let cmds = split("for f in $x $y; do echo $f; done");
     assert_eq!(commands(&cmds), ["echo $f"]);

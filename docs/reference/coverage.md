@@ -42,5 +42,6 @@ Only fully-static loops qualify; anything needing real expansion or guesswork is
 | Nested static loops        | `for a in x; do for b in y z; ...`       | Compose; both variables are substituted.                                             |
 | Non-literal values         | `for f in *.txt`, `$(ls)`, `$x`, `"a b"` | Left as one body; a glob, expansion, quote, or brace is not evaluated.               |
 | Reassigned loop variable   | `for f in a b; do f=x; ...`              | Left as one body; a `$f`-rebinding body (`f=`, `read f`, `(( ))`, nested `for f`) is not unrolled. |
+| Flow control               | `for f in a b; do echo $f; break; done`  | Left as one body; `break` / `continue` / `return` / `exit` change how many iterations run.          |
 
 Substitution only reaches the body's own words; a `$f` inside a command substitution (`$(grep $f)`) is left for that surfaced command, matching how loop context is otherwise not tracked across substitution boundaries.

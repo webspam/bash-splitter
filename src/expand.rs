@@ -51,8 +51,9 @@ pub(crate) fn for_values<'a>(
     for word in words {
         values.push(literal_value(&word.value)?);
     }
-    // A body that reassigns the loop variable would make the unrolled values wrong.
-    if body_rebinds(&f.body.list, &f.variable_name) {
+    // A body that reassigns the loop variable, or can cut the loop short, cannot be
+    // faithfully unrolled into one command per value.
+    if body_disqualifies(&f.body.list, &f.variable_name) {
         return None;
     }
     Some(values)
@@ -154,34 +155,35 @@ fn collect_spans<'a>(
     }
 }
 
-/// Whether the loop body reassigns `var`, which unrolling cannot model. Covers direct
-/// assignments, var-setting builtins, nested `for` over the same name, and arithmetic
-/// commands (`(( ))`, `for (( ))`), which can assign anything.
-fn body_rebinds(list: &ast::CompoundList, var: &str) -> bool {
-    list.0.iter().any(|item| and_or_rebinds(&item.0, var))
+/// Whether the loop body cannot be faithfully unrolled. Two reasons: it reassigns
+/// `var` (direct assignment, var-setting builtin, nested `for` over the same name, or
+/// arithmetic, which can assign anything), or it contains flow control
+/// (`break`/`continue`/`return`/`exit`) that changes how many iterations run.
+fn body_disqualifies(list: &ast::CompoundList, var: &str) -> bool {
+    list.0.iter().any(|item| and_or_disqualifies(&item.0, var))
 }
 
-fn and_or_rebinds(list: &ast::AndOrList, var: &str) -> bool {
-    pipeline_rebinds(&list.first, var)
+fn and_or_disqualifies(list: &ast::AndOrList, var: &str) -> bool {
+    pipeline_disqualifies(&list.first, var)
         || list.additional.iter().any(|a| match a {
-            ast::AndOr::And(p) | ast::AndOr::Or(p) => pipeline_rebinds(p, var),
+            ast::AndOr::And(p) | ast::AndOr::Or(p) => pipeline_disqualifies(p, var),
         })
 }
 
-fn pipeline_rebinds(pipeline: &ast::Pipeline, var: &str) -> bool {
-    pipeline.seq.iter().any(|c| command_rebinds(c, var))
+fn pipeline_disqualifies(pipeline: &ast::Pipeline, var: &str) -> bool {
+    pipeline.seq.iter().any(|c| command_disqualifies(c, var))
 }
 
-fn command_rebinds(command: &ast::Command, var: &str) -> bool {
+fn command_disqualifies(command: &ast::Command, var: &str) -> bool {
     match command {
-        ast::Command::Simple(s) => simple_rebinds(s, var),
-        ast::Command::Compound(c, _) => compound_rebinds(c, var),
+        ast::Command::Simple(s) => simple_disqualifies(s, var),
+        ast::Command::Compound(c, _) => compound_disqualifies(c, var),
         // A function body runs when later called, not per iteration.
         ast::Command::Function(_) | ast::Command::ExtendedTest(_, _) => false,
     }
 }
 
-fn simple_rebinds(simple: &ast::SimpleCommand, var: &str) -> bool {
+fn simple_disqualifies(simple: &ast::SimpleCommand, var: &str) -> bool {
     let assigns = simple
         .prefix
         .iter()
@@ -191,14 +193,24 @@ fn simple_rebinds(simple: &ast::SimpleCommand, var: &str) -> bool {
             ast::CommandPrefixOrSuffixItem::AssignmentWord(a, _) => assigns_var(a, var),
             _ => false,
         });
-    // Builtins that bind a variable from their arguments; treated conservatively.
-    let builtin = simple.word_or_name.as_ref().is_some_and(|w| {
+    // Builtins that bind a variable from their arguments, and keywords that alter loop
+    // flow; both are treated conservatively regardless of arguments.
+    let name_disqualifies = simple.word_or_name.as_ref().is_some_and(|w| {
         matches!(
             w.value.as_str(),
-            "read" | "readarray" | "mapfile" | "getopts" | "let" | "eval"
+            "read"
+                | "readarray"
+                | "mapfile"
+                | "getopts"
+                | "let"
+                | "eval"
+                | "break"
+                | "continue"
+                | "return"
+                | "exit"
         )
     });
-    assigns || builtin
+    assigns || name_disqualifies
 }
 
 fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {
@@ -209,29 +221,32 @@ fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {
     }
 }
 
-fn compound_rebinds(compound: &ast::CompoundCommand, var: &str) -> bool {
+fn compound_disqualifies(compound: &ast::CompoundCommand, var: &str) -> bool {
     use ast::CompoundCommand as C;
     match compound {
-        C::Subshell(s) => body_rebinds(&s.list, var),
-        C::BraceGroup(b) => body_rebinds(&b.list, var),
+        C::Subshell(s) => body_disqualifies(&s.list, var),
+        C::BraceGroup(b) => body_disqualifies(&b.list, var),
         // A nested loop over the same name rebinds it; otherwise scan its body.
-        C::ForClause(f) => f.variable_name == var || body_rebinds(&f.body.list, var),
+        C::ForClause(f) => f.variable_name == var || body_disqualifies(&f.body.list, var),
         C::WhileClause(w) | C::UntilClause(w) => {
-            body_rebinds(&w.0, var) || body_rebinds(&w.1.list, var)
+            body_disqualifies(&w.0, var) || body_disqualifies(&w.1.list, var)
         }
         C::IfClause(i) => {
-            body_rebinds(&i.condition, var)
-                || body_rebinds(&i.then, var)
+            body_disqualifies(&i.condition, var)
+                || body_disqualifies(&i.then, var)
                 || i.elses.iter().flatten().any(|e| {
-                    e.condition.as_ref().is_some_and(|c| body_rebinds(c, var))
-                        || body_rebinds(&e.body, var)
+                    e.condition
+                        .as_ref()
+                        .is_some_and(|c| body_disqualifies(c, var))
+                        || body_disqualifies(&e.body, var)
                 })
         }
-        C::CaseClause(c) => c
-            .cases
-            .iter()
-            .any(|item| item.cmd.as_ref().is_some_and(|cmd| body_rebinds(cmd, var))),
-        C::Coprocess(c) => command_rebinds(&c.body, var),
+        C::CaseClause(c) => c.cases.iter().any(|item| {
+            item.cmd
+                .as_ref()
+                .is_some_and(|cmd| body_disqualifies(cmd, var))
+        }),
+        C::Coprocess(c) => command_disqualifies(&c.body, var),
         // Arithmetic assignment (`(( f=1 ))`, `for (( ))`) can set any variable.
         C::Arithmetic(_) | C::ArithmeticForClause(_) => true,
     }
