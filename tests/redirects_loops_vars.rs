@@ -156,6 +156,25 @@ fn variables_are_deduped_in_first_seen_order() {
 }
 
 #[test]
+fn bare_arithmetic_names_are_collected() {
+    let cmds = split("echo $((count + 1))");
+    assert_eq!(variables(&cmds[0]), ["count"]);
+}
+
+#[test]
+fn dollar_names_in_arithmetic_are_not_doubled() {
+    let cmds = split("echo $(($x + y))");
+    assert_eq!(variables(&cmds[0]), ["x", "y"]);
+}
+
+#[test]
+fn bare_subscript_names_are_collected() {
+    // The subscript is an arithmetic context, so `i` is read as a variable.
+    let cmds = split("echo ${arr[i]}");
+    assert_eq!(variables(&cmds[0]), ["arr", "i"]);
+}
+
+#[test]
 fn single_quoted_text_yields_no_variables() {
     let cmds = split("echo '$a'");
     assert!(variables(&cmds[0]).is_empty());
