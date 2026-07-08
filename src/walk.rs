@@ -37,7 +37,6 @@ pub(crate) fn walk_compound_list(
     active: &[Subst],
 ) {
     for item in &list.0 {
-        // A poisoned unroll attempt will be discarded
         if ctx.poisoned {
             return;
         }
