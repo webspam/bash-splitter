@@ -36,9 +36,51 @@ pub struct Stage {
 pub struct NestedStage {
     #[serde(flatten)]
     pub(crate) stage: Stage,
-    /// Pipelines surfaced from this command's substitutions. Empty means no substitutions.
+    /// Items surfaced from this command's substitutions. Empty means no substitutions.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) substitutions: Vec<Vec<NestedStage>>,
+    pub(crate) substitutions: Vec<NestedItem>,
+}
+
+/// One item of nested output: a pipeline of stages (a JSON array) or a loop
+/// construct (a JSON object).
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum NestedItem {
+    Pipeline(Vec<NestedStage>),
+    Loop(NestedLoop),
+}
+
+/// A loop construct (nested mode): its contents as written and, for a static
+/// `for`, the unrolled per-iteration commands.
+#[derive(Serialize)]
+pub struct NestedLoop {
+    pub(crate) kind: LoopKind,
+    /// The iteration variable of `for v in ...`; absent for the other loop forms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) variable: Option<String>,
+    /// The condition's commands (while/until), re-run each iteration.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) condition: Vec<NestedItem>,
+    /// The body as written, loop variables unexpanded.
+    pub(crate) body: Vec<NestedItem>,
+    /// The iterations of a statically unrolled `for`; absent when not unrollable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) unrolled: Option<Vec<Iteration>>,
+}
+
+/// One unrolled iteration: the bound value and the body with it substituted.
+#[derive(Serialize)]
+pub struct Iteration {
+    pub(crate) value: String,
+    pub(crate) commands: Vec<NestedItem>,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum LoopKind {
+    For,
+    While,
+    Until,
 }
 
 /// One I/O redirect on a command. `kind` tags the target family: `file`, `fd`,
@@ -76,12 +118,47 @@ pub(crate) struct HereDoc {
 #[derive(Clone, Copy)]
 pub(crate) struct StageId(pub(crate) usize);
 
+/// Identifies a loop: its index in walk order.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct LoopId(pub(crate) usize);
+
+/// Which part of a loop a walked element sits in.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Section {
+    Condition,
+    Body,
+    /// One unroll pass, by iteration index.
+    Iteration(usize),
+}
+
+/// A structural slot: one section of a specific loop.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Loc {
+    pub(crate) loop_id: LoopId,
+    pub(crate) section: Section,
+}
+
 /// A walked command plus internal bookkeeping used to group stages into pipelines.
 pub(crate) struct Walked {
     pub(crate) stage: Stage,
     pub(crate) parent: Option<StageId>,
-    pub(crate) children: Vec<StageId>,
+    /// The innermost loop slot the command sits in, within its own walk.
+    pub(crate) loc: Option<Loc>,
     pub(crate) piped_from_previous: bool,
+}
+
+/// A walked loop construct plus bookkeeping to place it in nested output.
+pub(crate) struct LoopWalked {
+    pub(crate) kind: LoopKind,
+    pub(crate) variable: Option<String>,
+    /// Slot in the enclosing loop, if any (within the same walk).
+    pub(crate) parent: Option<Loc>,
+    /// The stage whose substitution this loop's walk came from.
+    pub(crate) sub_parent: Option<StageId>,
+    /// Stage index where the construct began; orders it among sibling stages.
+    pub(crate) position: usize,
+    /// The literal iteration values; `Some` only when the loop unrolled.
+    pub(crate) values: Option<Vec<String>>,
 }
 
 /// A substitution source still to be walked, tagged with the `id` of the stage it

@@ -16,6 +16,12 @@ pub fn split_pipelines(input: &str) -> Vec<Vec<Value>> {
 
 /// As [`split_pipelines`], but passes extra CLI flags (e.g. `--no-unroll`, `-n`).
 pub fn split_pipelines_with(input: &str, args: &[&str]) -> Vec<Vec<Value>> {
+    serde_json::from_value(split_json(input, args)).expect("pipelines of stages")
+}
+
+/// Runs the binary with `input` on stdin and returns the raw JSON output. Nested
+/// mode needs this: its top level mixes pipeline arrays and loop objects.
+pub fn split_json(input: &str, args: &[&str]) -> Value {
     let mut child = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
         .args(args)
         .stdin(Stdio::piped())

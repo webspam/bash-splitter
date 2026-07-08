@@ -19,7 +19,7 @@ Reads the raw command on stdin and writes a JSON array of pipelines on stdout, i
 ## Two modes
 
 - **Flat (default)**: every command, nested or not, listed as a top-level pipeline. Use this to check each command a line would run against a filter, without caring where it came from.
-- **Nested (`-n` / `--nested`)**: only root commands at the top level; a command hidden in a substitution is embedded under the stage it came from, in `substitutions`. Use this to tell a genuine top-level command apart from one that only runs inside an expansion.
+- **Nested (`-n` / `--nested`)**: only root commands at the top level; a command hidden in a substitution is embedded under the stage it came from, in `substitutions`. Each loop is an object (rather than a pipeline array) holding its contents; see [Loops](#loops-nested-mode). Use this to tell a genuine top-level command apart from one that only runs inside an expansion.
 
 All other metadata is the same in either mode.
 
@@ -33,7 +33,7 @@ That lets bash-splitter descend into every construct: pipelines, sequences, cont
 
 Omitted when empty / false.
 
-- **`substitutions`** (`--nested` only): recursive tree of all substituted commands / pipelines.
+- **`substitutions`** (`--nested` only): recursive tree of all substituted items (pipelines and loops).
 - **`redirects`**: I/O redirects (e.g. `>`), in source order. See the [redirects reference](/reference/redirects).
 - **`in_loop`**: `true` when the stage runs inside a `for`/`while`/`until` loop (caveat: any substitutions in the loop **will not** have this flag set, but in nested mode the parent(s) can be checked).
 - **`variables`**: all `$var`-style parameters the stage will expand when executed (`$f`, `${x}`, `$1`, `$?`), deduped in first-seen order.
@@ -201,3 +201,39 @@ echo 'echo $(foo $(bar))' | bash-splitter -n
 ```
 
 A substitution with no owning stage (a substitution in `[[ ... ]]`, or in a redirect on a compound command) has no parent to embed it under, so it surfaces as a top-level pipeline in both modes.
+
+## Loops (nested mode)
+
+In nested mode a loop is an object, not a pipeline array, wherever a pipeline could appear:
+
+- **`kind`**: `for`, `while`, or `until`.
+- **`variable`**: the iteration variable of `for v in ...`.
+- **`condition`** (`while`/`until`): the condition's commands, re-run each iteration.
+- **`body`**: the contents as written, loop variables unexpanded.
+- **`unrolled`**: for a [statically unrollable](/reference/coverage#static-loop-unrolling) `for`, one `{ value, commands }` entry per iteration, with the variable substituted. Absent otherwise.
+
+`body` and `unrolled` are two representations of the same commands: match rules against the literal `unrolled` text, or inspect `body` to reason about the loop as written.
+
+```sh
+echo 'for f in a b; do echo $f; done' | bash-splitter -n
+```
+
+```json
+[
+  {
+    "kind": "for",
+    "variable": "f",
+    "body": [
+      [{ "command": "echo $f", "name": "echo", "args": ["$f"], "in_loop": true, "variables": ["f"] }]
+    ],
+    "unrolled": [
+      { "value": "a", "commands": [[{ "command": "echo a", "name": "echo", "args": ["a"], "in_loop": true }]] },
+      { "value": "b", "commands": [[{ "command": "echo b", "name": "echo", "args": ["b"], "in_loop": true }]] }
+    ]
+  }
+]
+```
+
+In flat mode, loops are not represented: their commands are listed directly, with `unrolled`-style text when unrolling applies and the as-written text otherwise.
+
+A loop cannot sit inside a pipeline array, so a pipe into or out of a loop (`seq 3 | while read x; ...`) splits the pipeline at the loop boundary; the pipe connection is not represented.
