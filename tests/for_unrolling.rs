@@ -268,6 +268,34 @@ fn break_as_argument_does_not_block_unrolling() {
 }
 
 #[test]
+fn value_after_bare_reference_blocks_unrolling() {
+    // Splicing `x` after `$f` would produce `$fx`, a different variable.
+    let cmds = split("for g in x y; do echo $f$g; done");
+    assert_eq!(commands(&cmds), ["echo $f$g"]);
+    assert_eq!(variables(&cmds[0]), ["f", "g"]);
+}
+
+#[test]
+fn value_after_braced_reference_still_unrolls() {
+    let cmds = split("for g in x y; do echo ${f}$g; done");
+    assert_eq!(commands(&cmds), ["echo ${f}x", "echo ${f}y"]);
+}
+
+#[test]
+fn value_after_positional_still_unrolls() {
+    // `$1` expands one digit regardless of what follows, so `x` cannot merge.
+    let cmds = split("for g in x y; do echo $1$g; done");
+    assert_eq!(commands(&cmds), ["echo $1x", "echo $1y"]);
+}
+
+#[test]
+fn value_with_trailing_dollar_is_not_unrolled() {
+    // Splicing `a$` before `x` would produce `a$x`, a new expansion.
+    let cmds = split("for g in a$; do echo ${g}x; done");
+    assert_eq!(commands(&cmds), ["echo ${g}x"]);
+}
+
+#[test]
 fn variable_valued_loop_is_not_unrolled() {
     let cmds = split("for f in $x $y; do echo $f; done");
     assert_eq!(commands(&cmds), ["echo $f"]);

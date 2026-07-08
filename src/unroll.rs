@@ -36,6 +36,11 @@ fn literal_value(word: &str) -> Option<&str> {
     if text.contains(['*', '?', '[', ']', '{', '}']) {
         return None;
     }
+    // A trailing `$` would capture whatever follows the splice point (`a$` + `x`
+    // -> `a$x`); reject it.
+    if word.ends_with('$') {
+        return None;
+    }
     Some(word)
 }
 
@@ -164,11 +169,25 @@ fn substitute_str(value: &str, active: &[Subst]) -> String {
     let mut pos = 0;
     for (start, end, repl) in spans {
         out.push_str(&value[pos..start]);
-        out.push_str(repl);
+        // Pasting a value directly after another `$var` would glue onto that
+        // variable's name; refuse to paste there.
+        if repl.starts_with(is_ident_char) && ends_with_bare_ref(&out) {
+            out.push_str(&value[start..end]);
+        } else {
+            out.push_str(repl);
+        }
         pos = end;
     }
     out.push_str(&value[pos..]);
     out
+}
+
+/// Whether `text` ends with a bare named reference (`...$f`). A positional (`$1`)
+/// expands one digit regardless of what follows, so only a name can merge.
+fn ends_with_bare_ref(text: &str) -> bool {
+    let trimmed = text.trim_end_matches(is_ident_char);
+    let name = &text[trimmed.len()..];
+    name.chars().next().is_some_and(|c| !c.is_ascii_digit()) && trimmed.ends_with('$')
 }
 
 /// Collects the source spans of bare `$var`/`${var}` references (including inside
