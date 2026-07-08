@@ -8,7 +8,6 @@ use bash_splitter::{split, split_nested};
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let nested = args.iter().any(|a| a == "-n" || a == "--nested");
-    // Static `for` loops unroll by default; -U/--no-unroll keeps them as a single body.
     let unroll = !args.iter().any(|a| a == "-U" || a == "--no-unroll");
 
     let mut input = String::new();
