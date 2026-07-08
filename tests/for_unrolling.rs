@@ -151,6 +151,20 @@ fn substitution_in_case_value_blocks_unrolling() {
 }
 
 #[test]
+fn unrewritable_reference_in_extended_test_still_unrolls() {
+    // `${f%.txt}` in a `[[ ]]` word surfaces no stage, so it cannot leak `f`; unroll.
+    let cmds = split("for f in a b; do [[ ${f%.txt} = y ]]; cat \"$f\"; done");
+    assert_eq!(commands(&cmds), ["cat \"a\"", "cat \"b\""]);
+}
+
+#[test]
+fn unrewritable_reference_in_case_selector_still_unrolls() {
+    // The case value surfaces no stage, so `${f%.txt}` there cannot leak `f`; unroll.
+    let cmds = split("for f in a b; do case ${f%.txt} in x) echo $f;; esac; done");
+    assert_eq!(commands(&cmds), ["echo a", "echo b"]);
+}
+
+#[test]
 fn substitution_in_nested_for_values_blocks_unrolling() {
     let cmds = split("for f in a b; do for g in $(list $f); do echo $g; done; done");
     assert_eq!(commands(&cmds), ["echo $g", "list $f"]);
