@@ -7,14 +7,15 @@ use crate::types::{Stage, StageId, Sub, Walked};
 use crate::unroll::{self, Subst};
 use crate::word::collect_word_subs;
 
-/// The walk's shared state: the stages walked out so far, the substitutions still to
-/// surface, and whether static `for` loops should be unrolled. Threaded by `&mut`;
-/// the per-call context (`in_loop`, `active` bindings, pipe position) stays in params.
+/// State shared across the whole walk: the stages emitted so far, the substitutions
+/// still to surface, and whether to unroll static `for` loops. Context that varies
+/// per call (`in_loop`, the `active` bindings, whether this command is piped) is
+/// passed as an argument instead.
 pub(crate) struct Ctx<'a> {
     out: &'a mut Vec<Walked>,
     subs: &'a mut Vec<Sub>,
     unroll: bool,
-    /// Set when something under an unroll attempt proves it unfaithful; the
+    /// Set when something under an unroll attempt shows it would be incorrect; the
     /// attempt rolls back and re-walks the loop as a single body.
     poisoned: bool,
 }
@@ -70,7 +71,7 @@ fn walk_command(
 ) {
     match command {
         ast::Command::Simple(simple) => {
-            // Inside an unrolled loop, substitute the bindings so the stage is concrete.
+            // Inside an unrolled loop, substitute the bindings.
             let substituted;
             let simple: &ast::SimpleCommand = if active.is_empty() {
                 simple
@@ -107,8 +108,8 @@ fn walk_command(
             collect_redirect_list_subs(redirects.as_ref(), ctx.subs);
         }
         // The body runs when the function is later called, not per-iteration of any
-        // enclosing loop: reset the loop context, and never bake an iteration's
-        // value into the definition.
+        // enclosing loop: reset the loop context, and never substitute an
+        // iteration's value into the definition.
         ast::Command::Function(f) => {
             if !active.is_empty() {
                 ctx.poisoned = true;
@@ -138,7 +139,7 @@ fn walk_compound_command(
         C::BraceGroup(b) => walk_compound_list(&b.list, in_loop, ctx, active),
         C::ForClause(f) => {
             // Re-binding a variable an enclosing unroll holds shadows it; that
-            // unroll cannot be faithful. Once it falls back, this loop gets its
+            // unroll would be incorrect. Once it falls back, this loop gets its
             // own clean unroll attempt.
             if active.iter().any(|s| s.var == f.variable_name) {
                 ctx.poisoned = true;
@@ -198,8 +199,8 @@ fn walk_compound_command(
         }
         C::Coprocess(c) => walk_command(&c.body, false, in_loop, ctx, active),
         // No command to *run*, but arithmetic is command-substituted before it is
-        // evaluated, so `(( x=$(cmd) ))` runs cmd. It can also read or assign a
-        // bound variable while emitting no stage the unroll checks could see.
+        // evaluated, so `(( x=$(cmd) ))` runs cmd. It can also read or assign a bound
+        // variable without ever becoming a stage.
         C::Arithmetic(a) => {
             if unroll::mentions_any(&a.expr.value, active) {
                 ctx.poisoned = true;
@@ -209,10 +210,10 @@ fn walk_compound_command(
     }
 }
 
-/// Walks the loop body once per literal, each pass with the variable bound. Anything
-/// emitted that proves the unroll unfaithful poisons it: the attempt is rolled back
-/// (truncated) and `false` returned so the caller walks the loop as a single body.
-/// A problem owed to an *outer* binding re-poisons during that re-walk and cascades.
+/// Walks the loop body once per literal, each pass with the variable bound. If anything
+/// emitted shows the unroll would be incorrect, the attempt is rolled back (truncated) and
+/// `false` returned, so the caller walks the loop as a single body. A failure caused by
+/// an *outer* binding recurs on the re-walk, so the outer loop falls back too.
 fn try_unroll(f: &ast::ForClauseCommand, values: &[&str], ctx: &mut Ctx, active: &[Subst]) -> bool {
     let start = ctx.out.len();
     let substart = ctx.subs.len();

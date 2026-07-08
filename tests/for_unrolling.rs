@@ -139,7 +139,7 @@ fn command_substitution_without_var_still_unrolls() {
 
 #[test]
 fn substitution_in_extended_test_blocks_unrolling() {
-    // `[[ ]]` emits no stage, but the hidden `cmd $f` would surface still naming `f`.
+    // The `cmd $f` substitution inside surfaces as its own pipeline, still naming `f`.
     let cmds = split("for f in a b; do [[ -n $(cmd $f) ]]; done");
     assert_eq!(commands(&cmds), ["cmd $f"]);
 }
@@ -152,14 +152,14 @@ fn substitution_in_case_value_blocks_unrolling() {
 
 #[test]
 fn unrewritable_reference_in_extended_test_still_unrolls() {
-    // `${f%.txt}` in a `[[ ]]` word surfaces no stage, so it cannot leak `f`; unroll.
+    // A `[[ ]]` word never becomes a stage, so its `${f%.txt}` never reaches output; unroll.
     let cmds = split("for f in a b; do [[ ${f%.txt} = y ]]; cat \"$f\"; done");
     assert_eq!(commands(&cmds), ["cat \"a\"", "cat \"b\""]);
 }
 
 #[test]
 fn unrewritable_reference_in_case_selector_still_unrolls() {
-    // The case value surfaces no stage, so `${f%.txt}` there cannot leak `f`; unroll.
+    // The case value never becomes a stage, so its `${f%.txt}` never reaches output; unroll.
     let cmds = split("for f in a b; do case ${f%.txt} in x) echo $f;; esac; done");
     assert_eq!(commands(&cmds), ["echo a", "echo b"]);
 }
@@ -178,7 +178,7 @@ fn substitution_in_compound_redirect_blocks_unrolling() {
 
 #[test]
 fn arithmetic_command_on_loop_var_blocks_unrolling() {
-    // `(( i+=1 ))` reassigns i but emits no stage; it must still block.
+    // `(( i+=1 ))` reassigns `i` without becoming a stage, so it must still block.
     let cmds = split("for i in 1 2; do ((i+=1)); echo $i; done");
     assert_eq!(commands(&cmds), ["echo $i"]);
 }
@@ -191,7 +191,7 @@ fn arithmetic_command_on_other_var_still_unrolls() {
 
 #[test]
 fn function_definition_blocks_unrolling() {
-    // The body runs at call time, so an iteration's value must not bake in.
+    // The body runs at call time, so an iteration's value must not be substituted in.
     let cmds = split("for f in a b; do g() { echo $f; }; done");
     assert_eq!(commands(&cmds), ["echo $f"]);
 }
@@ -231,8 +231,7 @@ fn reassigned_variable_blocks_unrolling() {
 
 #[test]
 fn break_blocks_unrolling() {
-    // `break` exits after the first iteration, so later iterations never run;
-    // unrolling them would be wrong. Leave the loop as a single body.
+    // `break` exits after the first iteration; unrolling would be incorrect.
     let cmds = split("for f in a b c; do echo $f; break; done");
     assert_eq!(commands(&cmds), ["echo $f", "break"]);
 }

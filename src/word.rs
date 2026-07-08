@@ -71,7 +71,7 @@ pub(crate) fn is_ident_char(c: char) -> bool {
 
 /// Bare identifiers in arithmetic text (`x` in `x + 1`). `$x`/`${x}` forms are left
 /// to the word parse: a run preceded by `$` is skipped, and dedup absorbs `${x}`.
-/// A run starting with a digit (`0x1A`) names nothing.
+/// A run starting with a digit (`0x1A`) is a number, not an identifier.
 pub(crate) fn collect_bare_arith_names(text: &str, vars: &mut Vec<String>) {
     let mut prev: Option<char> = None;
     let mut chars = text.char_indices().peekable();

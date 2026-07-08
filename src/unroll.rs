@@ -1,11 +1,11 @@
 //! Static `for`-loop unrolling: `for f in a b c; do echo $f; done` becomes the
 //! individual commands `echo a`, `echo b`, `echo c`.
 //!
-//! Qualification is validate-and-rollback, not a pre-scan: the walk unrolls
-//! speculatively, and anything it emits that proves the unroll unfaithful (a
-//! residual reference to the bound variable, a rebind, flow control) poisons the
-//! attempt, which is then discarded and re-walked as a single body. The walk is
-//! the only traversal, so the check can never disagree with it about coverage.
+//! Qualification is validate-and-rollback, not a pre-scan: the walk unrolls as it
+//! goes, and if anything it emits shows the unroll would be incorrect (a leftover
+//! reference to the loop variable, a reassignment, flow control) the attempt is
+//! discarded and the loop re-walked as a single body. The walk is the only
+//! traversal, so the check can never disagree with it about coverage.
 
 use brush_parser::ParserOptions;
 use brush_parser::ast;
@@ -32,7 +32,7 @@ fn literal_value(word: &str) -> Option<&str> {
     let WordPiece::Text(text) = &piece.piece else {
         return None;
     };
-    // Glob and brace metacharacters would expand further; a plain literal has none.
+    // Glob and brace metacharacters would expand further; reject them.
     if text.contains(['*', '?', '[', ']', '{', '}']) {
         return None;
     }
@@ -49,7 +49,7 @@ pub(crate) fn for_values(f: &ast::ForClauseCommand, unroll: bool) -> Option<Vec<
     words.iter().map(|w| literal_value(&w.value)).collect()
 }
 
-/// Whether an emitted stage proves the enclosing unroll unfaithful: it still expands
+/// Whether an emitted stage breaks the enclosing unroll: it still expands
 /// a bound variable after substitution (an unrewritable form like `${f%.txt}`),
 /// reassigns one, or is a var-binding builtin or flow-control keyword.
 pub(crate) fn stage_breaks_unroll(
@@ -94,8 +94,8 @@ fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {
     }
 }
 
-/// Whether arithmetic text reads or assigns any bound variable (`(( f++ ))`), which
-/// the walk cannot see through a stage: arithmetic emits none.
+/// Whether arithmetic text reads or assigns a bound variable (`(( f++ ))`). Arithmetic
+/// never becomes a stage, so `stage_breaks_unroll` can't catch it.
 pub(crate) fn mentions_any(text: &str, active: &[Subst]) -> bool {
     active.iter().any(|s| mentions_identifier(text, s.var))
 }
