@@ -96,42 +96,8 @@ pub(crate) fn collect_bare_arith_names(text: &str, vars: &mut Vec<String>) {
 }
 
 /// Pulls the bodies of any command substitutions out of a single word, tagging each
-/// with the `parent` stage the word belongs to (`None` for a container that runs nothing).
+/// with the `parent` stage the word belongs to (`None` for a container that runs
+/// nothing). Variables are discarded: a stage-less context has no stage to hold them.
 pub(crate) fn collect_word_subs(word: &str, parent: Option<StageId>, subs: &mut Vec<Sub>) {
-    let Ok(pieces) = word::parse(word, &ParserOptions::default()) else {
-        return;
-    };
-    collect_piece_subs(&pieces, parent, subs);
-}
-
-pub(crate) fn collect_piece_subs(
-    pieces: &[WordPieceWithSource],
-    parent: Option<StageId>,
-    subs: &mut Vec<Sub>,
-) {
-    for piece in pieces {
-        match &piece.piece {
-            WordPiece::CommandSubstitution(s) | WordPiece::BackquotedCommandSubstitution(s) => subs
-                .push(Sub {
-                    source: s.clone(),
-                    parent,
-                }),
-            // Substitutions can nest inside double quotes (`"$(...)"`).
-            WordPiece::DoubleQuotedSequence(inner)
-            | WordPiece::GettextDoubleQuotedSequence(inner) => {
-                collect_piece_subs(inner, parent, subs)
-            }
-            // `${x:-$(cmd)}`, `${x/$(cmd)/y}`: the value/pattern words expand.
-            WordPiece::ParameterExpansion(expr) => {
-                // An array subscript is an arithmetic context (`${arr[$(cmd)]}`).
-                if let Some(index) = param_subscript(expr) {
-                    collect_word_subs(index, parent, subs);
-                }
-                collect_param_expr_words(expr, |w| collect_word_subs(w, parent, subs));
-            }
-            // `$(( $(cmd) ))` runs cmd while evaluating the expression.
-            WordPiece::ArithmeticExpression(a) => collect_word_subs(&a.value, parent, subs),
-            _ => {}
-        }
-    }
+    collect_word_expansions(word, parent, &mut Vec::new(), subs);
 }
