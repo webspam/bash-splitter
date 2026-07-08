@@ -32,20 +32,34 @@ A substitution with no owning stage (one in `[[ ... ]]`, or in a redirect on a c
 
 ## Static loop unrolling
 
-A `for` loop over plain literal values is unrolled into its individual commands, so `for f in a b c; do echo $f; done` splits as `echo a`, `echo b`, `echo c` rather than one `echo $f` body. This is on by default; pass `-U` / `--no-unroll` to keep the loop as a single body.
+A `for` loop over plain literal values is unrolled into its individual commands:
 
-Only fully-static loops qualify; anything needing real expansion or guesswork is left as one body.
+```bash
+for f in a b c; do echo $f; done
+# echo a, echo b, echo c
 
-| Case                       | Example                                  | Behaviour                                                                            |
-| -------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------ |
-| Plain literals             | `for f in a b c`                         | Unrolled; each `$f` / `${f}` in the body is substituted (respecting quotes).         |
-| Nested static loops        | `for a in x; do for b in y z; ...`       | Compose; both variables are substituted.                                             |
-| Non-literal values         | `for f in *.txt`, `$(ls)`, `$x`, `"a b"` | Left as one body; a glob, expansion, quote, or brace is not evaluated.               |
-| Reassigned loop variable   | `for f in a b; do f=x; ...`              | Left as one body; a `$f`-rebinding body (`f=`, `read f`, `(( f++ ))`, nested `for f`) is not unrolled. |
-| Flow control               | `for f in a b; do echo $f; break; done`  | Left as one body; `break` / `continue` / `return` / `exit` change how many iterations run.          |
-| Function definition        | `for f in a b; do g() { ...; }; done`    | Left as one body; the function body runs at call time, not per iteration.            |
-| Unrewritable reference     | `${f%.txt}`, `${f:-x}`, `$((f+1))`, `$(cmd $f)` | Left as one body; only plain `$f` / `${f}` is substituted, so any other form would still mention `f` in the output with the loop that defined it gone. |
+# With `--no-unroll`, it will simply be: echo $f
+```
 
-Only plain `$f` / `${f}` (including inside double quotes) is substituted. Any other reference to the variable blocks unrolling if it could reach the output - in a command word, a redirect, or a substitution body.
+Only fully-static loops qualify; anything needing real expansion or guesswork is not unrolled.
 
-A `$f` in a position the splitter never outputs (a `[[ ]]` word, a `case` dispatch value) cannot leak, so it does not block unrolling.
+::: tip
+Pass `-U` / `--no-unroll` to skip unrolling.
+:::
+
+| Case                     | Example                                         | Unrolled | Behaviour                                                                |
+| ------------------------ | ----------------------------------------------- | :------: | ------------------------------------------------------------------------ |
+| Plain literals           | `for f in a b c`                                |    ✅    | Each `$f` / `${f}` in the body is substituted (respecting quotes).       |
+| Nested static loops      | `for a in x; do for b in y z; ...`              |    ✅    | Both variables are substituted.                                          |
+| Non-literal values       | `for f in *.txt`, `$(ls)`, `$x`, `"a b"`        |    ❌    | A glob, expansion, quote, or brace is not evaluated.                     |
+| Reassigned loop variable | `for f in a b; do f=x; ...`                     |    ❌    | `f=`, `read f`, `(( f++ ))`, or nested `for f` reassigns it.             |
+| Flow control             | `for f in a b; do echo $f; break; done`         |    ❌    | `break` / `continue` / `return` / `exit` change how many iterations run. |
+| Function definition      | `for f in a b; do g() { ...; }; done`           |    ❌    | The function body runs at call time, not per iteration.                  |
+| Unrewritable reference   | `${f%.txt}`, `${f:-x}`, `$((f+1))`, `$(cmd $f)` |    ❌    | These reference `f` but only plain `$f` / `${f}` can be rewritten.       |
+
+A form like `${f%.txt}` in a listed command leaves the loop unmodified. In a `[[ ]]` test or `case` selector - which don't impact output - it still unrolls:
+
+```bash
+for f in a b; do cat "${f%.txt}"; done                 # not unrolled: you see cat "${f%.txt}" once
+for f in a b; do [[ ${f%.txt} = y ]]; cat "$f"; done   # unrolled: you see cat a, then cat b
+```
