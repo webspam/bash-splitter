@@ -30,9 +30,9 @@ A command hidden inside an expansion still runs, so it is surfaced too: in flat 
 
 A substitution with no owning stage (one in `[[ ... ]]`, or in a redirect on a compound command) has no parent to embed under, so it surfaces as a top-level pipeline in both modes.
 
-## Static loop expansion
+## Static loop unrolling
 
-A `for` loop over plain literal values is unrolled into its individual commands, so `for f in a b c; do echo $f; done` splits as `echo a`, `echo b`, `echo c` rather than one `echo $f` body. This is on by default; pass `-E` / `--no-expand` to keep the loop as a single body.
+A `for` loop over plain literal values is unrolled into its individual commands, so `for f in a b c; do echo $f; done` splits as `echo a`, `echo b`, `echo c` rather than one `echo $f` body. This is on by default; pass `-U` / `--no-unroll` to keep the loop as a single body.
 
 Only fully-static loops qualify; anything needing real expansion or guesswork is left as one body.
 

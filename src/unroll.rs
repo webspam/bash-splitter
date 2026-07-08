@@ -41,8 +41,8 @@ fn literal_value(word: &str) -> Option<&str> {
 
 /// The literals to unroll a `for` loop over, or `None` when a value is anything but
 /// a plain literal. Whether the *body* can be unrolled is decided by the walk itself.
-pub(crate) fn for_values(f: &ast::ForClauseCommand, expand: bool) -> Option<Vec<&str>> {
-    if !expand {
+pub(crate) fn for_values(f: &ast::ForClauseCommand, unroll: bool) -> Option<Vec<&str>> {
+    if !unroll {
         return None;
     }
     let words = f.values.as_ref()?;

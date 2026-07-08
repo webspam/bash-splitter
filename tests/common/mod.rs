@@ -14,7 +14,7 @@ pub fn split_pipelines(input: &str) -> Vec<Vec<Value>> {
     split_pipelines_with(input, &[])
 }
 
-/// As [`split_pipelines`], but passes extra CLI flags (e.g. `--no-expand`, `-n`).
+/// As [`split_pipelines`], but passes extra CLI flags (e.g. `--no-unroll`, `-n`).
 pub fn split_pipelines_with(input: &str, args: &[&str]) -> Vec<Vec<Value>> {
     let mut child = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
         .args(args)

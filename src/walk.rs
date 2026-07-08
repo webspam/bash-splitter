@@ -1,10 +1,10 @@
 use brush_parser::ast;
 
-use crate::expand::{self, Subst};
 use crate::extended_test::collect_extended_test_subs;
 use crate::redirect::collect_redirect_list_subs;
 use crate::simple::{collect_expansions, prefix_assignments, simple_redirects, suffix_args};
 use crate::types::{Stage, StageId, Sub, Walked};
+use crate::unroll::{self, Subst};
 use crate::word::collect_word_subs;
 
 /// The walk's shared state: the stages walked out so far, the substitutions still to
@@ -13,18 +13,18 @@ use crate::word::collect_word_subs;
 pub(crate) struct Ctx<'a> {
     out: &'a mut Vec<Walked>,
     subs: &'a mut Vec<Sub>,
-    expand: bool,
+    unroll: bool,
     /// Set when something under an unroll attempt proves it unfaithful; the
     /// attempt rolls back and re-walks the loop as a single body.
     poisoned: bool,
 }
 
 impl<'a> Ctx<'a> {
-    pub(crate) fn new(out: &'a mut Vec<Walked>, subs: &'a mut Vec<Sub>, expand: bool) -> Self {
+    pub(crate) fn new(out: &'a mut Vec<Walked>, subs: &'a mut Vec<Sub>, unroll: bool) -> Self {
         Ctx {
             out,
             subs,
-            expand,
+            unroll,
             poisoned: false,
         }
     }
@@ -76,12 +76,12 @@ fn walk_command(
             let simple: &ast::SimpleCommand = if active.is_empty() {
                 simple
             } else {
-                substituted = expand::substitute_simple(simple, active);
+                substituted = unroll::substitute_simple(simple, active);
                 &substituted
             };
             let id = StageId(ctx.out.len());
             let variables = collect_expansions(simple, id, ctx.subs);
-            if !active.is_empty() && expand::stage_breaks_unroll(simple, &variables, active) {
+            if !active.is_empty() && unroll::stage_breaks_unroll(simple, &variables, active) {
                 ctx.poisoned = true;
             }
             ctx.out.push(Walked {
@@ -145,7 +145,7 @@ fn walk_compound_command(
                 ctx.poisoned = true;
             }
             if !ctx.poisoned
-                && let Some(values) = expand::for_values(f, ctx.expand)
+                && let Some(values) = unroll::for_values(f, ctx.unroll)
                 && try_unroll(f, &values, ctx, active)
             {
                 return;
@@ -163,7 +163,7 @@ fn walk_compound_command(
                 .into_iter()
                 .flatten()
             {
-                if expand::mentions_any(&expr.value, active) {
+                if unroll::mentions_any(&expr.value, active) {
                     ctx.poisoned = true;
                 }
                 collect_word_subs(&expr.value, None, ctx.subs);
@@ -202,7 +202,7 @@ fn walk_compound_command(
         // evaluated, so `(( x=$(cmd) ))` runs cmd. It can also read or assign a
         // bound variable while emitting no stage the unroll checks could see.
         C::Arithmetic(a) => {
-            if expand::mentions_any(&a.expr.value, active) {
+            if unroll::mentions_any(&a.expr.value, active) {
                 ctx.poisoned = true;
             }
             collect_word_subs(&a.expr.value, None, ctx.subs)
@@ -234,7 +234,7 @@ fn try_unroll(f: &ast::ForClauseCommand, values: &[&str], ctx: &mut Ctx, active:
     if !ctx.poisoned {
         ctx.poisoned = ctx.subs[substart..]
             .iter()
-            .any(|s| expand::mentions_identifier(&s.source, &f.variable_name));
+            .any(|s| unroll::mentions_identifier(&s.source, &f.variable_name));
     }
     if ctx.poisoned {
         ctx.out.truncate(start);
