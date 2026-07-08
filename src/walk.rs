@@ -265,7 +265,7 @@ fn walk_for(f: &ast::ForClauseCommand, ctx: &mut Ctx, scope: Scope) {
     walk_compound_list(&f.body.list, ctx, scope.enter(id, Section::Body));
 }
 
-/// Condition list, then `do` body. Both re-run each iteration, so both count.
+/// Walks the condition list, then the `do` body; both re-run each iteration.
 fn walk_while_until(
     w: &ast::WhileOrUntilClauseCommand,
     kind: LoopKind,

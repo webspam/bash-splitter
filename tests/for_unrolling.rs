@@ -283,7 +283,7 @@ fn value_after_braced_reference_still_unrolls() {
 
 #[test]
 fn value_after_positional_still_unrolls() {
-    // `$1` expands one digit regardless of what follows, so `x` cannot merge.
+    // `$1` expands one digit regardless of what follows; nothing to merge with.
     let cmds = split("for g in x y; do echo $1$g; done");
     assert_eq!(commands(&cmds), ["echo $1x", "echo $1y"]);
 }
