@@ -1,0 +1,46 @@
+---
+source: tests/snapshots.rs
+expression: "split_nested(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "seq 3",
+      "name": "seq",
+      "args": [
+        "3"
+      ]
+    }
+  ],
+  {
+    "kind": "while",
+    "condition": [
+      [
+        {
+          "command": "read -r x",
+          "name": "read",
+          "args": [
+            "-r",
+            "x"
+          ],
+          "in_loop": true
+        }
+      ]
+    ],
+    "body": [
+      [
+        {
+          "command": "echo $x",
+          "name": "echo",
+          "args": [
+            "$x"
+          ],
+          "in_loop": true,
+          "variables": [
+            "x"
+          ]
+        }
+      ]
+    ]
+  }
+]

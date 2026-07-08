@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "split_nested(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "echo $(foo $(bar))",
+      "name": "echo",
+      "args": [
+        "$(foo $(bar))"
+      ],
+      "substitutions": [
+        [
+          {
+            "command": "foo $(bar)",
+            "name": "foo",
+            "args": [
+              "$(bar)"
+            ],
+            "substitutions": [
+              [
+                {
+                  "command": "bar",
+                  "name": "bar"
+                }
+              ]
+            ]
+          }
+        ]
+      ]
+    }
+  ]
+]

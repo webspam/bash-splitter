@@ -1,0 +1,84 @@
+---
+source: tests/snapshots.rs
+expression: "split_nested(input, true).expect(\"parse\")"
+---
+[
+  {
+    "kind": "for",
+    "variable": "f",
+    "body": [
+      [
+        {
+          "command": "grep \"$f\" log",
+          "name": "grep",
+          "args": [
+            "\"$f\"",
+            "log"
+          ],
+          "in_loop": true,
+          "variables": [
+            "f"
+          ]
+        },
+        {
+          "command": "head -1",
+          "name": "head",
+          "args": [
+            "-1"
+          ],
+          "in_loop": true
+        }
+      ]
+    ],
+    "unrolled": [
+      {
+        "value": "a",
+        "commands": [
+          [
+            {
+              "command": "grep \"a\" log",
+              "name": "grep",
+              "args": [
+                "\"a\"",
+                "log"
+              ],
+              "in_loop": true
+            },
+            {
+              "command": "head -1",
+              "name": "head",
+              "args": [
+                "-1"
+              ],
+              "in_loop": true
+            }
+          ]
+        ]
+      },
+      {
+        "value": "b",
+        "commands": [
+          [
+            {
+              "command": "grep \"b\" log",
+              "name": "grep",
+              "args": [
+                "\"b\"",
+                "log"
+              ],
+              "in_loop": true
+            },
+            {
+              "command": "head -1",
+              "name": "head",
+              "args": [
+                "-1"
+              ],
+              "in_loop": true
+            }
+          ]
+        ]
+      }
+    ]
+  }
+]

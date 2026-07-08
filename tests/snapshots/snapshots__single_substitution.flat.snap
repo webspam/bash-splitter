@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "split(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "cd \"$(echo pie)\"",
+      "name": "cd",
+      "args": [
+        "\"$(echo pie)\""
+      ]
+    }
+  ],
+  [
+    {
+      "command": "echo pie",
+      "name": "echo",
+      "args": [
+        "pie"
+      ]
+    }
+  ]
+]

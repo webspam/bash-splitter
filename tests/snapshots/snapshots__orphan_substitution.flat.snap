@@ -1,0 +1,12 @@
+---
+source: tests/snapshots.rs
+expression: "split(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "whoami",
+      "name": "whoami"
+    }
+  ]
+]

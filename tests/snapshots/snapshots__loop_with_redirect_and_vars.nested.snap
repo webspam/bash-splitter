@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "split_nested(input, true).expect(\"parse\")"
+---
+[
+  {
+    "kind": "for",
+    "variable": "f",
+    "body": [
+      [
+        {
+          "command": "grep \"$pattern\" \"$f\" > \"out/$f\"",
+          "name": "grep",
+          "args": [
+            "\"$pattern\"",
+            "\"$f\""
+          ],
+          "redirects": [
+            {
+              "op": ">",
+              "kind": "file",
+              "target": "\"out/$f\""
+            }
+          ],
+          "in_loop": true,
+          "variables": [
+            "pattern",
+            "f"
+          ]
+        }
+      ]
+    ]
+  }
+]
