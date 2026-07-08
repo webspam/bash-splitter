@@ -14,7 +14,7 @@ mod word;
 
 use brush_parser::{Parser, ParserOptions};
 
-use pipeline::{build_nested_pipelines, expand_substitutions, group_into_pipelines};
+use pipeline::{build_flat_pipelines, build_nested_pipelines, expand_substitutions};
 use types::Walked;
 pub use types::{NestedStage, Stage};
 use walk::{Ctx, walk_compound_list};
@@ -42,7 +42,7 @@ impl std::error::Error for ParseError {}
 /// Returns [`ParseError`] when `input` does not parse as a bash program.
 pub fn split(input: &str, unroll: bool) -> Result<Vec<Vec<Stage>>, ParseError> {
     let commands = walk_and_unroll(input, unroll)?;
-    Ok(group_into_pipelines(&commands))
+    Ok(build_flat_pipelines(&commands))
 }
 
 /// Splits `input` into nested pipelines of stages.

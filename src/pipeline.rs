@@ -39,9 +39,9 @@ fn split_source(input: &str, out: &mut Vec<Walked>, subs: &mut Vec<Sub>, unroll:
     }
 }
 
-/// Buckets items into pipelines: a piped item continues the current pipeline; any
-/// other starts a new one.
-fn bucket_piped<T>(items: impl Iterator<Item = (T, bool)>) -> Vec<Vec<T>> {
+/// Groups a flagged sequence into pipelines: a piped item continues the current
+/// pipeline; any other starts a new one.
+fn group_into_pipelines<T>(items: impl Iterator<Item = (T, bool)>) -> Vec<Vec<T>> {
     let mut pipelines: Vec<Vec<T>> = Vec::new();
     for (item, piped) in items {
         match pipelines.last_mut() {
@@ -52,9 +52,9 @@ fn bucket_piped<T>(items: impl Iterator<Item = (T, bool)>) -> Vec<Vec<T>> {
     pipelines
 }
 
-/// Buckets the flat walk order into pipelines (flat mode).
-pub(crate) fn group_into_pipelines(commands: &[Walked]) -> Vec<Vec<Stage>> {
-    bucket_piped(
+/// Groups the flat walk order into pipelines (flat mode).
+pub(crate) fn build_flat_pipelines(commands: &[Walked]) -> Vec<Vec<Stage>> {
+    group_into_pipelines(
         commands
             .iter()
             .map(|cmd| (cmd.stage.clone(), cmd.piped_from_previous)),
@@ -64,7 +64,7 @@ pub(crate) fn group_into_pipelines(commands: &[Walked]) -> Vec<Vec<Stage>> {
 /// Builds nested pipelines (nested mode): only root commands at the top level,
 /// substitutions embedded recursively under their parent command.
 pub(crate) fn build_nested_pipelines(commands: &[Walked]) -> Vec<Vec<NestedStage>> {
-    bucket_piped(
+    group_into_pipelines(
         commands
             .iter()
             .enumerate()
@@ -80,7 +80,7 @@ fn build_nested_stage(idx: usize, commands: &[Walked]) -> NestedStage {
     let cmd = &commands[idx];
     NestedStage {
         stage: cmd.stage.clone(),
-        substitutions: bucket_piped(cmd.children.iter().map(|&StageId(child_idx)| {
+        substitutions: group_into_pipelines(cmd.children.iter().map(|&StageId(child_idx)| {
             (
                 build_nested_stage(child_idx, commands),
                 commands[child_idx].piped_from_previous,
