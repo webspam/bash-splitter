@@ -56,7 +56,7 @@ pub(crate) fn simple_redirects(simple: &ast::SimpleCommand) -> Vec<Redirect> {
 }
 
 /// The parameters this command expands (deduped, first-seen) and the source of every
-/// substitution in it, one pass in source order: prefix, name, suffix. Substitutions
+/// substitution in it, in source order: prefix, name, suffix. Substitutions
 /// are tagged with `parent`, the `id` of the stage they are emitted as.
 pub(crate) fn collect_expansions(
     simple: &ast::SimpleCommand,

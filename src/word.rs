@@ -11,8 +11,7 @@ pub(crate) fn push_unique(vars: &mut Vec<String>, v: String) {
     }
 }
 
-/// Pulls the parameter names and command-substitution sources out of a single word
-/// in one parse.
+/// Pulls the parameter names and command-substitution sources out of a single word.
 pub(crate) fn collect_word_expansions(
     word: &str,
     parent: Option<StageId>,
