@@ -1,0 +1,29 @@
+---
+source: tests/snapshots.rs
+expression: "split_nested(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "grep foo",
+      "name": "grep",
+      "args": [
+        "foo"
+      ]
+    },
+    {
+      "command": "sort -u",
+      "name": "sort",
+      "args": [
+        "-u"
+      ]
+    },
+    {
+      "command": "wc -l",
+      "name": "wc",
+      "args": [
+        "-l"
+      ]
+    }
+  ]
+]

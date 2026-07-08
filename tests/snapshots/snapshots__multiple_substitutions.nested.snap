@@ -1,0 +1,30 @@
+---
+source: tests/snapshots.rs
+expression: "split_nested(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "echo \"$(whoami)\" \"$(hostname)\"",
+      "name": "echo",
+      "args": [
+        "\"$(whoami)\"",
+        "\"$(hostname)\""
+      ],
+      "substitutions": [
+        [
+          {
+            "command": "whoami",
+            "name": "whoami"
+          }
+        ],
+        [
+          {
+            "command": "hostname",
+            "name": "hostname"
+          }
+        ]
+      ]
+    }
+  ]
+]

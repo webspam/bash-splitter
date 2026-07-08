@@ -1,0 +1,30 @@
+---
+source: tests/snapshots.rs
+expression: "split(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "echo $(foo $(bar))",
+      "name": "echo",
+      "args": [
+        "$(foo $(bar))"
+      ]
+    }
+  ],
+  [
+    {
+      "command": "foo $(bar)",
+      "name": "foo",
+      "args": [
+        "$(bar)"
+      ]
+    }
+  ],
+  [
+    {
+      "command": "bar",
+      "name": "bar"
+    }
+  ]
+]

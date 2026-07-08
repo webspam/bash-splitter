@@ -1,0 +1,44 @@
+---
+source: tests/snapshots.rs
+expression: "split(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "grep \"a\" log",
+      "name": "grep",
+      "args": [
+        "\"a\"",
+        "log"
+      ],
+      "in_loop": true
+    },
+    {
+      "command": "head -1",
+      "name": "head",
+      "args": [
+        "-1"
+      ],
+      "in_loop": true
+    }
+  ],
+  [
+    {
+      "command": "grep \"b\" log",
+      "name": "grep",
+      "args": [
+        "\"b\"",
+        "log"
+      ],
+      "in_loop": true
+    },
+    {
+      "command": "head -1",
+      "name": "head",
+      "args": [
+        "-1"
+      ],
+      "in_loop": true
+    }
+  ]
+]

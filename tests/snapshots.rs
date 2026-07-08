@@ -1,146 +1,38 @@
-mod common;
-use std::fs;
-use std::path::Path;
+//! Golden snapshots of the full output JSON in both modes, managed by insta:
+//! `.snap` files live in `tests/snapshots/`. After an intentional format change,
+//! refresh them with `cargo insta review` (or `INSTA_UPDATE=always cargo test`).
 
-/// Golden snapshot testing for both flat and nested modes.
-/// To add a new snapshot test:
-/// 1. Create `tests/snapshots/NAME.sh` with the input bash command
-/// 2. Run the binary to get actual output: `echo '...' | target/release/bash-splitter > NAME.flat.json`
-/// 3. Do the same for nested mode: `echo '...' | target/release/bash-splitter -n > NAME.nested.json`
-/// 4. Add a test function below that calls `test_snapshot("NAME")`
-///
-/// Snapshots verify that the output format is stable across changes.
-fn test_snapshot(name: &str) {
-    let snapshot_dir = Path::new("tests/snapshots");
-    let input_path = snapshot_dir.join(format!("{name}.sh"));
-    let flat_path = snapshot_dir.join(format!("{name}.flat.json"));
-    let nested_path = snapshot_dir.join(format!("{name}.nested.json"));
+use bash_splitter::{split, split_nested};
 
-    let input = fs::read_to_string(&input_path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", input_path.display()));
-
-    // Test flat mode
-    if flat_path.exists() {
-        let expected = fs::read_to_string(&flat_path)
-            .unwrap_or_else(|e| panic!("failed to read {}: {e}", flat_path.display()));
-        let actual = run_flat(&input);
-        assert_eq!(actual, expected, "flat mode snapshot mismatch for {name}");
-    }
-
-    // Test nested mode
-    if nested_path.exists() {
-        let expected = fs::read_to_string(&nested_path)
-            .unwrap_or_else(|e| panic!("failed to read {}: {e}", nested_path.display()));
-        let actual = run_nested(&input);
-        assert_eq!(actual, expected, "nested mode snapshot mismatch for {name}");
-    }
+/// One test per case, snapshotting `NAME.flat` and `NAME.nested`.
+macro_rules! snapshot_tests {
+    ($($name:ident: $input:expr,)*) => {$(
+        #[test]
+        fn $name() {
+            let input = $input;
+            insta::assert_json_snapshot!(
+                concat!(stringify!($name), ".flat"),
+                split(input, true).expect("parse")
+            );
+            insta::assert_json_snapshot!(
+                concat!(stringify!($name), ".nested"),
+                split_nested(input, true).expect("parse")
+            );
+        }
+    )*};
 }
 
-fn run_flat(input: &str) -> String {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn bash-splitter");
-
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(input.as_bytes())
-        .expect("write");
-
-    let output = child.wait_with_output().expect("wait");
-    assert!(
-        output.status.success(),
-        "flat mode failed for input {input:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    String::from_utf8(output.stdout).expect("valid utf8")
-}
-
-fn run_nested(input: &str) -> String {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
-        .arg("-n")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn bash-splitter -n");
-
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(input.as_bytes())
-        .expect("write");
-
-    let output = child.wait_with_output().expect("wait");
-    assert!(
-        output.status.success(),
-        "nested mode failed for input {input:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    String::from_utf8(output.stdout).expect("valid utf8")
-}
-
-// Test cases: each uses snapshots/NAME.{sh,flat.json,nested.json}
-
-#[test]
-fn snapshot_simple_command() {
-    test_snapshot("simple_command");
-}
-
-#[test]
-fn snapshot_pipeline() {
-    test_snapshot("pipeline");
-}
-
-#[test]
-fn snapshot_sequence() {
-    test_snapshot("sequence");
-}
-
-#[test]
-fn snapshot_single_substitution() {
-    test_snapshot("single_substitution");
-}
-
-#[test]
-fn snapshot_nested_substitutions() {
-    test_snapshot("nested_substitutions");
-}
-
-#[test]
-fn snapshot_multiple_substitutions() {
-    test_snapshot("multiple_substitutions");
-}
-
-#[test]
-fn snapshot_loop_with_redirect_and_vars() {
-    test_snapshot("loop_with_redirect_and_vars");
-}
-
-#[test]
-fn snapshot_loop_with_nested_substitution() {
-    test_snapshot("loop_with_nested_substitution");
-}
-
-#[test]
-fn snapshot_orphan_substitution() {
-    test_snapshot("orphan_substitution");
-}
-
-#[test]
-fn snapshot_complex_pipeline_with_subs() {
-    test_snapshot("complex_pipeline_with_subs");
+snapshot_tests! {
+    simple_command: "ls -la",
+    pipeline: "grep foo | sort -u | wc -l",
+    sequence: r#"echo "start" && echo "middle"; echo "end""#,
+    single_substitution: r#"cd "$(echo pie)""#,
+    nested_substitutions: "echo $(foo $(bar))",
+    multiple_substitutions: r#"echo "$(whoami)" "$(hostname)""#,
+    loop_with_redirect_and_vars: r#"for f in *.txt; do grep "$pattern" "$f" > "out/$f"; done"#,
+    loop_with_nested_substitution: r#"for f in *.txt; do grep "$(cat pattern.txt)" "$f" > "out/$f"; done"#,
+    orphan_substitution: "[[ -n $(whoami) ]]",
+    complex_pipeline_with_subs: r#"cd "$(echo pie)" && cat "$(grep x)" | sort -u"#,
+    static_for: r#"for f in a b; do grep "$f" log | head -1; done"#,
+    while_loop: "seq 3 | while read -r x; do echo $x; done",
 }

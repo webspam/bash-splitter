@@ -1,0 +1,26 @@
+---
+source: tests/snapshots.rs
+expression: "split_nested(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "cd \"$(echo pie)\"",
+      "name": "cd",
+      "args": [
+        "\"$(echo pie)\""
+      ],
+      "substitutions": [
+        [
+          {
+            "command": "echo pie",
+            "name": "echo",
+            "args": [
+              "pie"
+            ]
+          }
+        ]
+      ]
+    }
+  ]
+]

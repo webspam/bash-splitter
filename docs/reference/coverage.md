@@ -12,7 +12,7 @@ How a command line is broken into pipelines and stages.
 | Sequence / list   | `a; b`, `a && b`, `a \|\| b`                                             | Each command becomes its own pipeline.                                                                                                               |
 | Pipe continuation | `(echo a; echo b) \| foo`                                                | A stage reading an upstream pipe continues the pipeline; any other command starts a new one. Only a group's last command joins the downstream stage. |
 | Grouping as stage | `foo \| (grep x)`, `foo \| { a \| b; }`                                  | Descends into subshells and brace groups; inner commands are listed individually, and the group's first command inherits the upstream pipe.          |
-| Compound command  | `for`, `while`, `until`, `if`, `case`, functions, coprocesses, subshells | Never emitted whole. Bodies and conditions are inspected so every nested command is listed, including the command used as an `if`/`while` condition. |
+| Compound command  | `for`, `while`, `until`, `if`, `case`, functions, coprocesses, subshells | Never emitted whole. Bodies and conditions are inspected so every nested command is listed, including the command used as an `if`/`while` condition. In nested mode, loops group their contents as [loop objects](/guide/#loops-nested-mode). |
 | Env assignment    | `LD_PRELOAD=x cmd -a`                                                    | Split into `assignments`, `name`, and `args`. A bare `FOO=bar` is listed with no `name`, since it invokes nothing.                                   |
 
 ## Hidden commands
@@ -42,6 +42,8 @@ for f in a b c; do echo $f; done
 ```
 
 Only fully-static loops qualify; anything needing real expansion or guesswork is not unrolled.
+
+In flat mode the unrolled commands replace the loop body. In nested mode the [loop object](/guide/#loops-nested-mode) carries both: `body` as written, `unrolled` per iteration.
 
 ::: tip
 Pass `-U` / `--no-unroll` to skip unrolling.

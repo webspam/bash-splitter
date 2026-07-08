@@ -1,0 +1,37 @@
+---
+source: tests/snapshots.rs
+expression: "split(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "seq 3",
+      "name": "seq",
+      "args": [
+        "3"
+      ]
+    },
+    {
+      "command": "read -r x",
+      "name": "read",
+      "args": [
+        "-r",
+        "x"
+      ],
+      "in_loop": true
+    }
+  ],
+  [
+    {
+      "command": "echo $x",
+      "name": "echo",
+      "args": [
+        "$x"
+      ],
+      "in_loop": true,
+      "variables": [
+        "x"
+      ]
+    }
+  ]
+]

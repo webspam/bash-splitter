@@ -1,0 +1,33 @@
+---
+source: tests/snapshots.rs
+expression: "split_nested(input, true).expect(\"parse\")"
+---
+[
+  [
+    {
+      "command": "echo \"start\"",
+      "name": "echo",
+      "args": [
+        "\"start\""
+      ]
+    }
+  ],
+  [
+    {
+      "command": "echo \"middle\"",
+      "name": "echo",
+      "args": [
+        "\"middle\""
+      ]
+    }
+  ],
+  [
+    {
+      "command": "echo \"end\"",
+      "name": "echo",
+      "args": [
+        "\"end\""
+      ]
+    }
+  ]
+]
