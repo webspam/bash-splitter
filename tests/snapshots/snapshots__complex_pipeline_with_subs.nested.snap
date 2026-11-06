@@ -10,6 +10,9 @@ expression: "split_nested(input, true).expect(\"parse\")"
       "args": [
         "\"$(echo pie)\""
       ],
+      "dynamic_args": [
+        0
+      ],
       "substitutions": [
         [
           {
@@ -29,6 +32,9 @@ expression: "split_nested(input, true).expect(\"parse\")"
       "name": "cat",
       "args": [
         "\"$(grep x)\""
+      ],
+      "dynamic_args": [
+        0
       ],
       "substitutions": [
         [

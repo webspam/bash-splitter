@@ -1,6 +1,7 @@
 use brush_parser::ast;
 
 use crate::redirect::{collect_redirect_expansions, redirect_of};
+use crate::resolve::SourceWord;
 use crate::types::{Redirect, StageId, Sub};
 use crate::word::collect_word_expansions;
 
@@ -19,16 +20,20 @@ pub(crate) fn prefix_assignments(simple: &ast::SimpleCommand) -> Vec<String> {
 }
 
 /// The command's arguments. A suffix `foo=bar` is a literal arg, not an assignment.
-/// Redirects and process substitutions are excluded.
-pub(crate) fn suffix_args(simple: &ast::SimpleCommand) -> Vec<String> {
+/// Redirects are excluded.
+pub(crate) fn suffix_args(simple: &ast::SimpleCommand) -> Vec<SourceWord> {
     let mut out = Vec::new();
     if let Some(suffix) = &simple.suffix {
         for item in &suffix.0 {
             match item {
                 ast::CommandPrefixOrSuffixItem::Word(w)
-                | ast::CommandPrefixOrSuffixItem::AssignmentWord(_, w) => out.push(w.value.clone()),
-                ast::CommandPrefixOrSuffixItem::IoRedirect(_)
-                | ast::CommandPrefixOrSuffixItem::ProcessSubstitution(_, _) => {}
+                | ast::CommandPrefixOrSuffixItem::AssignmentWord(_, w) => {
+                    out.push(SourceWord::Plain(w.value.clone()))
+                }
+                ast::CommandPrefixOrSuffixItem::ProcessSubstitution(kind, sub) => out.push(
+                    SourceWord::ProcessSubstitution(format!("{kind}({})", sub.list)),
+                ),
+                ast::CommandPrefixOrSuffixItem::IoRedirect(_) => {}
             }
         }
     }

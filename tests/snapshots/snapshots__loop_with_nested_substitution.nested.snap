@@ -15,6 +15,10 @@ expression: "split_nested(input, true).expect(\"parse\")"
             "\"$(cat pattern.txt)\"",
             "\"$f\""
           ],
+          "dynamic_args": [
+            0,
+            1
+          ],
           "redirects": [
             {
               "op": ">",

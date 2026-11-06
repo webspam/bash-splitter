@@ -11,6 +11,10 @@ expression: "split(input, true).expect(\"parse\")"
         "\"$pattern\"",
         "\"$f\""
       ],
+      "dynamic_args": [
+        0,
+        1
+      ],
       "redirects": [
         {
           "op": ">",

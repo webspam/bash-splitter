@@ -2,6 +2,7 @@ use brush_parser::ast;
 
 use crate::extended_test::collect_extended_test_subs;
 use crate::redirect::collect_redirect_list_subs;
+use crate::resolve::resolve_argv;
 use crate::simple::{collect_expansions, prefix_assignments, simple_redirects, suffix_args};
 use crate::types::{Loc, LoopId, LoopKind, LoopWalked, Section, Stage, StageId, Sub, Walked};
 use crate::unroll::{self, Subst};
@@ -124,8 +125,12 @@ fn walk_command(command: &ast::Command, piped_from_previous: bool, ctx: &mut Ctx
             };
             let id = StageId(ctx.out.len());
             let variables = collect_expansions(simple, id, ctx.subs);
+            let argv = resolve_argv(
+                simple.word_or_name.as_ref().map(|w| w.value.clone()),
+                suffix_args(simple),
+            );
             if !scope.active.is_empty()
-                && unroll::stage_breaks_unroll(simple, &variables, scope.active)
+                && unroll::stage_breaks_unroll(simple, &argv, &variables, scope.active)
             {
                 ctx.poisoned = true;
             }
@@ -133,8 +138,7 @@ fn walk_command(command: &ast::Command, piped_from_previous: bool, ctx: &mut Ctx
                 stage: Stage {
                     command: simple.to_string(),
                     assignments: prefix_assignments(simple),
-                    name: simple.word_or_name.as_ref().map(|w| w.value.clone()),
-                    args: suffix_args(simple),
+                    argv,
                     redirects: simple_redirects(simple),
                     in_loop: scope.in_loop,
                     variables,

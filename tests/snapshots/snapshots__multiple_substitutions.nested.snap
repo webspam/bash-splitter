@@ -11,6 +11,10 @@ expression: "split_nested(input, true).expect(\"parse\")"
         "\"$(whoami)\"",
         "\"$(hostname)\""
       ],
+      "dynamic_args": [
+        0,
+        1
+      ],
       "substitutions": [
         [
           {

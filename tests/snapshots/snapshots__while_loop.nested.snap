@@ -35,6 +35,9 @@ expression: "split_nested(input, true).expect(\"parse\")"
           "args": [
             "$x"
           ],
+          "dynamic_args": [
+            0
+          ],
           "in_loop": true,
           "variables": [
             "x"

@@ -9,6 +9,9 @@ expression: "split(input, true).expect(\"parse\")"
       "name": "echo",
       "args": [
         "$(foo $(bar))"
+      ],
+      "dynamic_args": [
+        0
       ]
     }
   ],
@@ -18,6 +21,9 @@ expression: "split(input, true).expect(\"parse\")"
       "name": "foo",
       "args": [
         "$(bar)"
+      ],
+      "dynamic_args": [
+        0
       ]
     }
   ],

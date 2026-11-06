@@ -12,7 +12,9 @@ use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
 
 use crate::redirect::expanded_word_mut;
+use crate::resolve::{brace_expand, expands_unquoted};
 use crate::simple::prefix_suffix_items;
+use crate::types::ResolvedArgv;
 use crate::word::is_ident_char;
 
 /// An active loop binding: the variable and the literal it currently expands to.
@@ -33,7 +35,7 @@ fn literal_value(word: &str) -> Option<&str> {
         return None;
     };
     // Glob and brace metacharacters would expand further; reject them.
-    if text.contains(['*', '?', '[', ']', '{', '}']) {
+    if expands_unquoted("", text) || text.contains(['{', '}']) {
         return None;
     }
     // A trailing `$` would capture whatever follows the splice point (`a$` + `x`
@@ -59,28 +61,14 @@ pub(crate) fn for_values(f: &ast::ForClauseCommand, unroll: bool) -> Option<Vec<
 /// reassigns one, or is a var-binding builtin or flow-control keyword.
 pub(crate) fn stage_breaks_unroll(
     simple: &ast::SimpleCommand,
+    argv: &ResolvedArgv,
     variables: &[String],
     active: &[Subst],
 ) -> bool {
     if active.iter().any(|s| variables.iter().any(|v| v == s.var)) {
         return true;
     }
-    // Var-binding builtins and flow-control keywords, regardless of arguments.
-    if simple.word_or_name.as_ref().is_some_and(|w| {
-        matches!(
-            w.value.as_str(),
-            "read"
-                | "readarray"
-                | "mapfile"
-                | "getopts"
-                | "let"
-                | "eval"
-                | "break"
-                | "continue"
-                | "return"
-                | "exit"
-        )
-    }) {
+    if invokes_unroll_breaking_command(argv) {
         return true;
     }
     prefix_suffix_items(simple).any(|item| match item {
@@ -89,6 +77,39 @@ pub(crate) fn stage_breaks_unroll(
         }
         _ => false,
     })
+}
+
+const UNROLL_BREAKING_COMMANDS: [&str; 10] = [
+    "read",
+    "readarray",
+    "mapfile",
+    "getopts",
+    "let",
+    "eval",
+    "break",
+    "continue",
+    "return",
+    "exit",
+];
+
+const BUILTIN_WRAPPERS: [&str; 2] = ["builtin", "command"];
+
+fn invokes_unroll_breaking_command(argv: &ResolvedArgv) -> bool {
+    let mut after_wrapper = false;
+    for (word, dynamic) in argv.words() {
+        if dynamic {
+            return true;
+        }
+        if after_wrapper && word.starts_with('-') {
+            continue;
+        }
+        if BUILTIN_WRAPPERS.contains(&word) {
+            after_wrapper = true;
+            continue;
+        }
+        return UNROLL_BREAKING_COMMANDS.contains(&word);
+    }
+    false
 }
 
 fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {
@@ -150,7 +171,19 @@ fn substitute_item(item: &mut ast::CommandPrefixOrSuffixItem, active: &[Subst]) 
 }
 
 fn substitute(word: &mut ast::Word, active: &[Subst]) {
-    word.value = substitute_str(&word.value, active);
+    let substituted = substitute_str(&word.value, active);
+    if brace_expansion_commutes(&word.value, &substituted, active) {
+        word.value = substituted;
+    }
+}
+
+fn brace_expansion_commutes(raw: &str, substituted: &str, active: &[Subst]) -> bool {
+    let Some(expanded) = brace_expand(raw) else {
+        return false;
+    };
+    let expanded_then_substituted: Vec<_> =
+        expanded.iter().map(|w| substitute_str(w, active)).collect();
+    brace_expand(substituted) == Some(expanded_then_substituted)
 }
 
 /// Replaces each `$var`/`${var}` in one word's text with its bound literal. brush's

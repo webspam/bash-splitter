@@ -29,10 +29,43 @@ Parsing uses [brush](https://crates.io/crates/brush-parser), a proper bash parse
 
 That lets bash-splitter descend into every construct: pipelines, sequences, control flow, commands hidden in substitutions, and several others. See the [coverage reference](docs/reference/coverage.md) for the full table.
 
+## Word resolution
+
+`name` and `args` are the words bash would pass, after brace expansion and quote removal:
+
+```sh
+echo '"-"echo {-rf,} $x' | bash-splitter
+```
+
+```json
+[[{
+  "command": "\"-\"echo {-rf,} $x",
+  "name": "-echo",
+  "args": ["-rf", "$x"],
+  "raw": { "name": "\"-\"echo", "args": ["{-rf,}", "$x"] },
+  "dynamic_args": [1],
+  "variables": ["x"]
+}]]
+```
+
+Words that can't be resolved statically are left as written, and flagged in `dynamic_name` / `dynamic_args`:
+
+- parameter, command, and arithmetic expansions: `$x`, `$(cmd)`, `$((1+2))`
+- unquoted globs: `*.txt`, `@(a|b)`
+- unquoted tilde expansion: `~/foo`, `x=~`
+- brace sequences: `{1..3}`
+- locale strings: `$"..."`
+- process substitutions: `<(cmd)`, `>(cmd)`
+
+Brace expansion can move words across the name boundary: `{echo,hi} x` resolves to `name: "echo"`, `args: ["hi", "x"]`.
+
 ## Optional fields
 
 Omitted when empty / false.
 
+- **`raw`**: `name` and `args` before [resolution](#word-resolution), if different.
+- **`dynamic_name`**: `true` if `name` could not be statically resolved.
+- **`dynamic_args`**: indices of `args` that could not be statically resolved.
 - **`substitutions`** (`--nested` only): recursive tree of all substituted commands / pipelines.
 - **`redirects`**: I/O redirects (e.g. `>`), in source order. See the [redirects reference](docs/reference/redirects.md).
 - **`in_loop`**: `true` when the stage runs inside a `for`/`while`/`until` loop (caveat: any substitutions in the loop **will not** have this flag set, but in nested mode the parent(s) can be checked).
@@ -65,7 +98,7 @@ echo 'echo "pie" && grep -i foo access.log | sort -u; echo done' | bash-splitter
 Actual output (one line):
 
 ```json
-[[{"command":"echo \"pie\"","name":"echo","args":["\"pie\""]}],[{"command":"grep -i foo access.log","name":"grep","args":["-i","foo","access.log"]},{"command":"sort -u","name":"sort","args":["-u"]}],[{"command":"echo done","name":"echo","args":["done"]}]]
+[[{"command":"echo \"pie\"","name":"echo","args":["pie"],"raw":{"name":"echo","args":["\"pie\""]}}],[{"command":"grep -i foo access.log","name":"grep","args":["-i","foo","access.log"]},{"command":"sort -u","name":"sort","args":["-u"]}],[{"command":"echo done","name":"echo","args":["done"]}]]
 ```
 
 Same output, pretty-printed: the outer array holds three pipelines; `echo "pie"` and `echo done` are standalone, while the middle one has two piped stages.
@@ -76,7 +109,8 @@ Same output, pretty-printed: the outer array holds three pipelines; `echo "pie"`
     {
       "command": "echo \"pie\"",
       "name": "echo",
-      "args": ["\"pie\""]
+      "args": ["pie"],
+      "raw": { "name": "echo", "args": ["\"pie\""] }
     }
   ],
   [
@@ -103,7 +137,7 @@ Same output, pretty-printed: the outer array holds three pipelines; `echo "pie"`
 
 ## Metadata example
 
-A loop whose body redirects to a file built from variables exercises all three extra fields:
+A loop whose body redirects to a file built from variables exercises all extra fields:
 
 ```sh
 printf 'for f in *.txt; do\n  grep "$pattern" "$f" > "out/$f"\ndone\n' | bash-splitter
@@ -118,6 +152,7 @@ Pretty-printed: one pipeline with the single `grep` stage, flagged `in_loop`, it
       "command": "grep \"$pattern\" \"$f\" > \"out/$f\"",
       "name": "grep",
       "args": ["\"$pattern\"", "\"$f\""],
+      "dynamic_args": [0, 1],
       "redirects": [{ "op": ">", "kind": "file", "target": "\"out/$f\"" }],
       "in_loop": true,
       "variables": ["pattern", "f"]
@@ -150,7 +185,7 @@ echo 'cd "$(echo pie)"' | bash-splitter
 
 ```json
 [
-  [{ "command": "cd \"$(echo pie)\"", "name": "cd", "args": ["\"$(echo pie)\""] }],
+  [{ "command": "cd \"$(echo pie)\"", "name": "cd", "args": ["\"$(echo pie)\""], "dynamic_args": [0] }],
   [{ "command": "echo pie", "name": "echo", "args": ["pie"] }]
 ]
 ```
@@ -167,6 +202,7 @@ echo 'cd "$(echo pie)"' | bash-splitter -n
     "command": "cd \"$(echo pie)\"",
     "name": "cd",
     "args": ["\"$(echo pie)\""],
+    "dynamic_args": [0],
     "substitutions": [
       [{ "command": "echo pie", "name": "echo", "args": ["pie"] }]
     ]
@@ -186,11 +222,13 @@ echo 'echo $(foo $(bar))' | bash-splitter -n
     "command": "echo $(foo $(bar))",
     "name": "echo",
     "args": ["$(foo $(bar))"],
+    "dynamic_args": [0],
     "substitutions": [
       [{
         "command": "foo $(bar)",
         "name": "foo",
         "args": ["$(bar)"],
+        "dynamic_args": [0],
         "substitutions": [
           [{ "command": "bar", "name": "bar" }]
         ]
