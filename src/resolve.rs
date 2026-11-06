@@ -6,7 +6,7 @@ use brush_parser::word::{
     self, BraceExpressionMember, BraceExpressionOrText, WordPiece, WordPieceWithSource,
 };
 
-use crate::types::RawArgv;
+use crate::types::{RawArgv, ResolvedArgv};
 
 const MAX_BRACE_WORDS: usize = 256;
 
@@ -49,14 +49,6 @@ impl SourceWord {
             Self::Plain(text) | Self::ProcessSubstitution(text) => text,
         }
     }
-}
-
-pub(crate) struct ResolvedArgv {
-    pub(crate) name: Option<String>,
-    pub(crate) args: Vec<String>,
-    pub(crate) raw: Option<RawArgv>,
-    pub(crate) dynamic_name: bool,
-    pub(crate) dynamic_args: Vec<usize>,
 }
 
 pub(crate) fn resolve_argv(raw_name: Option<String>, source_args: Vec<SourceWord>) -> ResolvedArgv {

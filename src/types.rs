@@ -9,6 +9,23 @@ pub struct Stage {
     /// Leading env assignments (the `LD_PRELOAD=x` in `LD_PRELOAD=x cmd`, or a bare `FOO=bar`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) assignments: Vec<String>,
+    #[serde(flatten)]
+    pub(crate) argv: ResolvedArgv,
+    /// The command's I/O redirects, in source order (heredoc bodies included).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) redirects: Vec<Redirect>,
+    /// True when this command sits inside a `for`/`while`/`until` loop, so it runs
+    /// once per iteration. Not tracked across substitution boundaries.
+    #[serde(skip_serializing_if = "<&bool as std::ops::Not>::not")]
+    pub(crate) in_loop: bool,
+    /// Names of the parameters this command expands (`$f`, `${x}`, `$1`), deduped in
+    /// first-seen order. A single-quoted or quoted-heredoc reference contributes none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) variables: Vec<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct ResolvedArgv {
     /// The command actually invoked (`cmd` in `LD_PRELOAD=x cmd -a`), brace-expanded and
     /// quote-removed. Absent for a bare assignment (`FOO=bar`), which runs nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -25,17 +42,6 @@ pub struct Stage {
     /// Indices into `args` of words that could not be statically resolved.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) dynamic_args: Vec<usize>,
-    /// The command's I/O redirects, in source order (heredoc bodies included).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) redirects: Vec<Redirect>,
-    /// True when this command sits inside a `for`/`while`/`until` loop, so it runs
-    /// once per iteration. Not tracked across substitution boundaries.
-    #[serde(skip_serializing_if = "<&bool as std::ops::Not>::not")]
-    pub(crate) in_loop: bool,
-    /// Names of the parameters this command expands (`$f`, `${x}`, `$1`), deduped in
-    /// first-seen order. A single-quoted or quoted-heredoc reference contributes none.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) variables: Vec<String>,
 }
 
 /// A command's name and arguments exactly as written.
