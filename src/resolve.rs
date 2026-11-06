@@ -51,6 +51,18 @@ impl SourceWord {
     }
 }
 
+impl ResolvedArgv {
+    pub(crate) fn words(&self) -> impl Iterator<Item = (&str, bool)> {
+        let name = self.name.as_deref().map(|name| (name, self.dynamic_name));
+        let args = self
+            .args
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| (arg.as_str(), self.dynamic_args.contains(&i)));
+        name.into_iter().chain(args)
+    }
+}
+
 pub(crate) fn resolve_argv(raw_name: Option<String>, source_args: Vec<SourceWord>) -> ResolvedArgv {
     let mut words = raw_name
         .iter()

@@ -3,6 +3,7 @@
 
 mod common;
 use common::{args, command_text, in_loop, name, split, split_pipelines_with, variables};
+use rstest::rstest;
 use serde_json::Value;
 
 /// Runs the binary with `--no-unroll` and returns the flattened stage list.
@@ -258,6 +259,28 @@ fn exit_blocks_unrolling() {
 fn break_nested_in_condition_blocks_unrolling() {
     let cmds = split("for f in a b; do if grep -q x y; then break; fi; done");
     assert_eq!(commands(&cmds), ["grep -q x y", "break"]);
+}
+
+#[rstest]
+#[case::quoted_builtin(r#""read" x"#)]
+#[case::escaped_keyword(r"\break")]
+#[case::brace_formed_keyword("{exit,}")]
+#[case::builtin_wrapper("builtin read x")]
+#[case::command_wrapper_with_option("command -p eval x")]
+#[case::dynamic_name("$cmd x")]
+fn resolved_loop_breaking_command_blocks_unrolling(#[case] command: &str) {
+    let cmds = split(&format!("for f in a b; do {command}; echo $f; done"));
+    assert!(
+        commands(&cmds).contains(&"echo $f"),
+        "{command:?}: {:?}",
+        commands(&cmds)
+    );
+}
+
+#[test]
+fn wrapped_ordinary_command_still_unrolls() {
+    let cmds = split("for f in a b; do command ls $f; done");
+    assert_eq!(commands(&cmds), ["command ls a", "command ls b"]);
 }
 
 #[test]
