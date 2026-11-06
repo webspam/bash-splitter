@@ -12,6 +12,7 @@ use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
 
 use crate::redirect::expanded_word_mut;
+use crate::resolve::{brace_expand, expands_unquoted};
 use crate::simple::prefix_suffix_items;
 use crate::word::is_ident_char;
 
@@ -33,7 +34,7 @@ fn literal_value(word: &str) -> Option<&str> {
         return None;
     };
     // Glob and brace metacharacters would expand further; reject them.
-    if text.contains(['*', '?', '[', ']', '{', '}']) {
+    if expands_unquoted("", text) || text.contains(['{', '}']) {
         return None;
     }
     // A trailing `$` would capture whatever follows the splice point (`a$` + `x`
@@ -150,7 +151,20 @@ fn substitute_item(item: &mut ast::CommandPrefixOrSuffixItem, active: &[Subst]) 
 }
 
 fn substitute(word: &mut ast::Word, active: &[Subst]) {
-    word.value = substitute_str(&word.value, active);
+    let substituted = substitute_str(&word.value, active);
+    if brace_expansion_commutes(&word.value, &substituted, active) {
+        word.value = substituted;
+    }
+}
+
+fn brace_expansion_commutes(raw: &str, substituted: &str, active: &[Subst]) -> bool {
+    let expanded_then_substituted = brace_expand(raw).map(|words| {
+        words
+            .iter()
+            .map(|w| substitute_str(w, active))
+            .collect::<Vec<_>>()
+    });
+    expanded_then_substituted == brace_expand(substituted)
 }
 
 /// Replaces each `$var`/`${var}` in one word's text with its bound literal. brush's

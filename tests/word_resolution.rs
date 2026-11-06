@@ -74,6 +74,18 @@ fn dynamic_args(cmd: &Value) -> Vec<u64> {
 #[case::escaped_glob(r"x \*", &["x", "*"])]
 #[case::quoted_tilde(r#"x "~""#, &["x", "~"])]
 #[case::infix_tilde("x a~b", &["x", "a~b"])]
+#[case::escaped_dollar_brace(r"x \${a,b}", &["x", "$a", "$b"])]
+#[case::ansi_c_comma_in_brace(r"x {$'a,b',c}", &["x", "a,b", "c"])]
+#[case::ansi_c_comma_not_separator(r"x {a$'\x2c'b}", &["x", "{a,b}"])]
+#[case::quoted_close_brace(r#"x {a,"b}"}"#, &["x", "a", "b}"])]
+#[case::escaped_close_brace(r"x {a,b\}}", &["x", "a", "b}"])]
+#[case::trailing_close_brace("x {a,b}}", &["x", "a}", "b}"])]
+#[case::sequence_text_member("x {a..c,d}", &["x", "a..c", "d"])]
+#[case::ansi_c_close_brace(r"x {a,$'}'}", &["x", "a", "}"])]
+#[case::unrolled_brace_then_var(
+    "for f in zz; do echo {x,y}$f; done",
+    &["echo", "xzz", "yzz"]
+)]
 fn resolves_statically(#[case] input: &str, #[case] expected: &[&str]) {
     let cmd = only(input);
     assert_eq!(words(&cmd), expected, "{input:?}");
@@ -104,6 +116,37 @@ fn resolves_statically(#[case] input: &str, #[case] expected: &[&str]) {
 #[case::brace_explosion(
     "echo {a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}",
     &["echo", "{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}"],
+    false,
+    &[0]
+)]
+#[case::unrolled_var_glues_to_brace(
+    "for f in zz; do $f{danger,} -n; done",
+    &["$fdanger", "$f", "-n"],
+    true,
+    &[0]
+)]
+#[case::unrolled_comma_forms_brace(
+    "for f in ,; do echo {a$f-n}; done",
+    &["echo", "{a$f-n}"],
+    false,
+    &[0]
+)]
+#[case::unrolled_extglob_value(
+    r#"for f in @(zz|yy); do echo "$f"; done"#,
+    &["echo", r#""$f""#],
+    false,
+    &[0]
+)]
+#[case::process_substitution_arg("cat <(true)", &["cat", "<(true)"], false, &[0])]
+#[case::output_process_substitution_keeps_indices(
+    "tee >(cat) -a",
+    &["tee", ">(cat)", "-a"],
+    false,
+    &[0]
+)]
+#[case::unrolled_tilde_value(
+    r#"for d in ~; do echo "$d"; done"#,
+    &["echo", r#""$d""#],
     false,
     &[0]
 )]

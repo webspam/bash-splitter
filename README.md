@@ -55,6 +55,7 @@ Words that can't be resolved statically are left as written, and flagged in `dyn
 - unquoted tilde expansion: `~/foo`, `x=~`
 - brace sequences: `{1..3}`
 - locale strings: `$"..."`
+- process substitutions: `<(cmd)`, `>(cmd)`
 
 Brace expansion can move words across the name boundary: `{echo,hi} x` resolves to `name: "echo"`, `args: ["hi", "x"]`.
 

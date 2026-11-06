@@ -31,6 +31,26 @@ impl Word {
     }
 }
 
+pub(crate) enum SourceWord {
+    Plain(String),
+    ProcessSubstitution(String),
+}
+
+impl SourceWord {
+    fn resolve(&self) -> Vec<Word> {
+        match self {
+            Self::Plain(text) => resolve_word(text),
+            Self::ProcessSubstitution(text) => vec![Word::dynamic(text)],
+        }
+    }
+
+    fn into_text(self) -> String {
+        match self {
+            Self::Plain(text) | Self::ProcessSubstitution(text) => text,
+        }
+    }
+}
+
 pub(crate) struct ResolvedArgv {
     pub(crate) name: Option<String>,
     pub(crate) args: Vec<String>,
@@ -39,11 +59,11 @@ pub(crate) struct ResolvedArgv {
     pub(crate) dynamic_args: Vec<usize>,
 }
 
-pub(crate) fn resolve_argv(raw_name: Option<String>, raw_args: Vec<String>) -> ResolvedArgv {
+pub(crate) fn resolve_argv(raw_name: Option<String>, source_args: Vec<SourceWord>) -> ResolvedArgv {
     let mut words = raw_name
         .iter()
-        .chain(&raw_args)
-        .flat_map(|w| resolve_word(w));
+        .flat_map(|w| resolve_word(w))
+        .chain(source_args.iter().flat_map(SourceWord::resolve));
 
     let (name, dynamic_name) = match words.next() {
         Some(w) => (Some(w.text), w.dynamic),
@@ -58,6 +78,7 @@ pub(crate) fn resolve_argv(raw_name: Option<String>, raw_args: Vec<String>) -> R
         args.push(w.text);
     }
 
+    let raw_args: Vec<String> = source_args.into_iter().map(SourceWord::into_text).collect();
     let raw = (name != raw_name || args != raw_args).then_some(RawArgv {
         name: raw_name,
         args: raw_args,
@@ -83,7 +104,7 @@ fn resolve_word(raw: &str) -> Vec<Word> {
     }
 }
 
-fn brace_expand(raw: &str) -> Option<Vec<String>> {
+pub(crate) fn brace_expand(raw: &str) -> Option<Vec<String>> {
     match word::parse_brace_expansions(raw, &ParserOptions::default()).ok()? {
         Some(pieces) => expand_brace_pieces(&pieces),
         None => Some(vec![raw.to_owned()]),
@@ -143,7 +164,7 @@ fn remove_quotes(word: &str) -> Option<String> {
     Some(out)
 }
 
-fn expands_unquoted(preceding: &str, text: &str) -> bool {
+pub(crate) fn expands_unquoted(preceding: &str, text: &str) -> bool {
     if text.contains(['*', '?', '[', '(']) {
         return true;
     }

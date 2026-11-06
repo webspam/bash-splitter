@@ -13,8 +13,7 @@ pub struct Stage {
     /// quote-removed. Absent for a bare assignment (`FOO=bar`), which runs nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
-    /// The command's arguments, in order, resolved like `name`. Redirects and process
-    /// substitutions are excluded.
+    /// The command's arguments, in order, resolved like `name`. Redirects are excluded.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) args: Vec<String>,
     /// The source words of `name` and `args`; present only when resolution changed them.
