@@ -119,6 +119,24 @@ fn resolves_statically(#[case] input: &str, #[case] expected: &[&str]) {
     false,
     &[0]
 )]
+#[case::many_unclosed_braces(
+    "echo {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{",
+    &["echo", "{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{"],
+    false,
+    &[0]
+)]
+#[case::sequence_overflows_i64(
+    "echo {1..99999999999999999999}",
+    &["echo", "{1..99999999999999999999}"],
+    false,
+    &[0]
+)]
+#[case::unrolled_sequence_overflows_i64(
+    "for f in a; do echo {1..99999999999999999999}$f; done",
+    &["echo", "{1..99999999999999999999}$f"],
+    false,
+    &[0]
+)]
 #[case::unrolled_var_glues_to_brace(
     "for f in zz; do $f{danger,} -n; done",
     &["$fdanger", "$f", "-n"],

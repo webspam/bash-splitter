@@ -9,6 +9,8 @@ use brush_parser::word::{
 use crate::types::{RawArgv, ResolvedArgv};
 
 const MAX_BRACE_WORDS: usize = 256;
+const MAX_BRACE_OPENS: usize = 10;
+const MAX_SEQUENCE_DIGITS: usize = 18;
 
 struct Word {
     text: String,
@@ -109,10 +111,24 @@ fn resolve_word(raw: &str) -> Vec<Word> {
 }
 
 pub(crate) fn brace_expand(raw: &str) -> Option<Vec<String>> {
+    let brace_opens = raw.matches('{').count();
+    if brace_opens == 0 {
+        return Some(vec![raw.to_owned()]);
+    }
+    if brace_opens > MAX_BRACE_OPENS || longest_digit_run(raw) > MAX_SEQUENCE_DIGITS {
+        return None;
+    }
     match word::parse_brace_expansions(raw, &ParserOptions::default()).ok()? {
         Some(pieces) => expand_brace_pieces(&pieces),
         None => Some(vec![raw.to_owned()]),
     }
+}
+
+fn longest_digit_run(raw: &str) -> usize {
+    raw.split(|c: char| !c.is_ascii_digit())
+        .map(str::len)
+        .max()
+        .unwrap_or(0)
 }
 
 fn expand_brace_pieces(pieces: &[BraceExpressionOrText]) -> Option<Vec<String>> {

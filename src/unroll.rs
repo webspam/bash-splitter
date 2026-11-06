@@ -178,13 +178,12 @@ fn substitute(word: &mut ast::Word, active: &[Subst]) {
 }
 
 fn brace_expansion_commutes(raw: &str, substituted: &str, active: &[Subst]) -> bool {
-    let expanded_then_substituted = brace_expand(raw).map(|words| {
-        words
-            .iter()
-            .map(|w| substitute_str(w, active))
-            .collect::<Vec<_>>()
-    });
-    expanded_then_substituted == brace_expand(substituted)
+    let Some(expanded) = brace_expand(raw) else {
+        return false;
+    };
+    let expanded_then_substituted: Vec<_> =
+        expanded.iter().map(|w| substitute_str(w, active)).collect();
+    brace_expand(substituted) == Some(expanded_then_substituted)
 }
 
 /// Replaces each `$var`/`${var}` in one word's text with its bound literal. brush's
