@@ -168,17 +168,16 @@ fn group_feeding_pipe_splits_at_sequence_boundary() {
     assert_eq!(pipelines[1].len(), 2);
 }
 
-// A command substitution hides a command that still runs; it must surface so a rule
-// can block it. `echo $(rm -rf /)` is not just a plain `echo`.
+// A command substitution hides a command that still runs; it must surface so a rule can block it
 #[test]
 fn command_substitution_surfaces_inner_command() {
-    let cmds = split("echo $(rm -rf /)");
+    let cmds = split("echo $(ls -la /)");
     assert!(cmds.iter().any(|c| name(c) == Some("echo")));
-    let rm = cmds
+    let inner = cmds
         .iter()
-        .find(|c| name(c) == Some("rm"))
-        .expect("rm inside $() should surface");
-    assert_eq!(args(rm), ["-rf", "/"]);
+        .find(|c| name(c) == Some("ls"))
+        .expect("ls inside $() should surface");
+    assert_eq!(args(inner), ["-la", "/"]);
 }
 
 // Process substitutions run commands too (`<(...)`, `>(...)`).
@@ -204,25 +203,25 @@ fn nested_substitutions_surface_every_level() {
 // the inner command lands in its own trailing pipeline.
 #[test]
 fn substitution_does_not_disturb_outer_pipeline() {
-    let pipelines = split_pipelines("echo $(rm) | grep x");
+    let pipelines = split_pipelines("echo $(date) | grep x");
     assert_eq!(
         pipelines[0].len(),
         2,
         "echo | grep stays intact: {pipelines:?}"
     );
-    assert_eq!(pipelines[1].len(), 1, "rm is its own pipeline");
-    assert_eq!(pipelines[1][0]["name"], "rm");
+    assert_eq!(pipelines[1].len(), 1, "date is its own pipeline");
+    assert_eq!(pipelines[1][0]["name"], "date");
 }
 
 // `[[ ... ]]` runs no command, but a substitution in its words still executes.
 #[test]
 fn extended_test_surfaces_substitution() {
-    let cmds = split("[[ -n $(rm -rf /) ]]");
-    let rm = cmds
+    let cmds = split("[[ -n $(ls -la /) ]]");
+    let inner = cmds
         .iter()
-        .find(|c| name(c) == Some("rm"))
-        .expect("rm inside [[ ]] should surface");
-    assert_eq!(args(rm), ["-rf", "/"]);
+        .find(|c| name(c) == Some("ls"))
+        .expect("ls inside [[ ]] should surface");
+    assert_eq!(args(inner), ["-la", "/"]);
 }
 
 // Both sides of a binary test are scanned.

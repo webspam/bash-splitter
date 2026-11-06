@@ -12,25 +12,24 @@ fn any_argv_has(cmds: &[serde_json::Value], token: &str) -> bool {
         .any(|c| argv(c).iter().any(|a| a.contains(token)))
 }
 
-// Heredoc body is data, not commands; a line-oriented splitter would leak `rm -rf /`
-// as something actually run.
+// Heredoc body is data; a line-oriented splitter would leak each line as something actually run
 #[test]
 fn heredoc_body_is_not_split_into_commands() {
-    let input = "cat <<EOF\nrm -rf / --no-preserve-root\nsudo dd if=/dev/zero of=/dev/sda\nEOF\n";
+    let input = "cat <<EOF\nls -la /\nuname -a\nwhoami\nEOF\n";
     let cmds = split(input);
     assert_eq!(cmds.len(), 1, "heredoc is one command: {cmds:?}");
     assert_eq!(argv(&cmds[0]), ["cat"]);
     assert!(
-        !any_argv_has(&cmds, "rm"),
-        "heredoc body `rm` leaked as a command"
+        !any_argv_has(&cmds, "ls"),
+        "heredoc body `ls` leaked as a command"
     );
     assert!(
-        !any_argv_has(&cmds, "dd"),
-        "heredoc body `dd` leaked as a command"
+        !any_argv_has(&cmds, "uname"),
+        "heredoc body `uname` leaked as a command"
     );
     assert!(
-        !any_argv_has(&cmds, "sudo"),
-        "heredoc body `sudo` leaked as a command"
+        !any_argv_has(&cmds, "whoami"),
+        "heredoc body `whoami` leaked as a command"
     );
 }
 
