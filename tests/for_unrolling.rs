@@ -123,9 +123,15 @@ fn brace_formed_reference_blocks_unrolling() {
 }
 
 #[test]
-fn unexpandable_brace_word_blocks_unrolling() {
+fn unexpandable_brace_word_mentioning_loop_var_blocks_unrolling() {
+    let cmds = split("for f in a b; do echo {$,x}f-{1..2}; done");
+    assert_eq!(commands(&cmds), ["echo {$,x}f-{1..2}"]);
+}
+
+#[test]
+fn unrelated_unexpandable_brace_word_still_unrolls() {
     let cmds = split("for f in a b; do echo $f {1..2}; done");
-    assert_eq!(commands(&cmds), ["echo $f {1..2}"]);
+    assert_eq!(commands(&cmds), ["echo a {1..2}", "echo b {1..2}"]);
 }
 
 #[test]
