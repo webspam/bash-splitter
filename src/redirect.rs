@@ -1,7 +1,7 @@
 use brush_parser::ast;
 
 use crate::types::{HereDoc, Redirect, StageId, Sub};
-use crate::word::{collect_word_expansions, collect_word_subs};
+use crate::word::{collect_brace_expanded_expansions, collect_word_expansions, collect_word_subs};
 
 /// Structures one redirect for output.
 pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
@@ -88,9 +88,20 @@ pub(crate) fn collect_redirect_expansions(
     subs: &mut Vec<Sub>,
 ) {
     if let Some(w) = expanded_word(redirect) {
-        collect_word_expansions(&w.value, parent, vars, subs);
+        if is_brace_expanded(redirect) {
+            collect_brace_expanded_expansions(&w.value, parent, vars, subs);
+        } else {
+            collect_word_expansions(&w.value, parent, vars, subs);
+        }
     }
     collect_process_sub(redirect, parent, subs);
+}
+
+fn is_brace_expanded(redirect: &ast::IoRedirect) -> bool {
+    !matches!(
+        redirect,
+        ast::IoRedirect::HereString(..) | ast::IoRedirect::HereDocument(..)
+    )
 }
 
 /// As [`collect_redirect_expansions`], substitutions only (for stage-less contexts).

@@ -117,6 +117,12 @@ fn default_value_reference_blocks_unrolling() {
 }
 
 #[test]
+fn brace_formed_reference_blocks_unrolling() {
+    let cmds = split("for f in a b; do echo {$,x}f; done");
+    assert_eq!(commands(&cmds), ["echo {$,x}f"]);
+}
+
+#[test]
 fn arithmetic_reference_blocks_unrolling() {
     let cmds = split("for f in 1 2; do echo $((f + 1)); done");
     assert_eq!(commands(&cmds), ["echo $((f + 1))"]);

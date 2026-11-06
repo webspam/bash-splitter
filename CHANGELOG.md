@@ -9,6 +9,10 @@
 - New `dynamic_name` / `dynamic_args` fields: flag words that cannot be statically resolved (expansions, globs, tilde, brace sequences, process substitutions)
 - `args` includes process substitutions (`cat <(cmd)` → `["<(cmd)"]`)
 
+### Fixes
+
+- `variables` reports the names bash actually reads after brace expansion (`$f{a,b}` reads `fa` and `fb`, not `f`)
+
 ## 0.2.0
 
 ### Features
