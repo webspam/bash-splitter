@@ -8,9 +8,16 @@ expression: "split(input, true).expect(\"parse\")"
       "command": "grep \"a\" log",
       "name": "grep",
       "args": [
-        "\"a\"",
+        "a",
         "log"
       ],
+      "raw": {
+        "name": "grep",
+        "args": [
+          "\"a\"",
+          "log"
+        ]
+      },
       "in_loop": true
     },
     {
@@ -27,9 +34,16 @@ expression: "split(input, true).expect(\"parse\")"
       "command": "grep \"b\" log",
       "name": "grep",
       "args": [
-        "\"b\"",
+        "b",
         "log"
       ],
+      "raw": {
+        "name": "grep",
+        "args": [
+          "\"b\"",
+          "log"
+        ]
+      },
       "in_loop": true
     },
     {

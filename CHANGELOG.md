@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- `name` and `args` resolve brace expansion and quote removal (`"-"echo`, `\-echo`, `$'\x2decho'`, `{-echo,}` all become `-echo`).
+- New `raw` field: added when `name` / `args` resolved to different values
+- New `dynamic_name` / `dynamic_args` fields: flag words that cannot be statically resolved (expansions, globs, tilde, brace sequences)
+
 ## 0.2.0
 
 ### Features

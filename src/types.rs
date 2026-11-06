@@ -9,13 +9,23 @@ pub struct Stage {
     /// Leading env assignments (the `LD_PRELOAD=x` in `LD_PRELOAD=x cmd`, or a bare `FOO=bar`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) assignments: Vec<String>,
-    /// The command actually invoked (`cmd` in `LD_PRELOAD=x cmd -a`). Absent for a
-    /// bare assignment (`FOO=bar`), which runs nothing.
+    /// The command actually invoked (`cmd` in `LD_PRELOAD=x cmd -a`), brace-expanded and
+    /// quote-removed. Absent for a bare assignment (`FOO=bar`), which runs nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
-    /// The command's arguments, in order. Redirects and process substitutions are excluded.
+    /// The command's arguments, in order, resolved like `name`. Redirects and process
+    /// substitutions are excluded.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) args: Vec<String>,
+    /// The source words of `name` and `args`; present only when resolution changed them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) raw: Option<RawArgv>,
+    /// True when `name` could not be statically resolved and is left as written.
+    #[serde(skip_serializing_if = "<&bool as std::ops::Not>::not")]
+    pub(crate) dynamic_name: bool,
+    /// Indices into `args` of words that could not be statically resolved.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) dynamic_args: Vec<usize>,
     /// The command's I/O redirects, in source order (heredoc bodies included).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) redirects: Vec<Redirect>,
@@ -27,6 +37,15 @@ pub struct Stage {
     /// first-seen order. A single-quoted or quoted-heredoc reference contributes none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) variables: Vec<String>,
+}
+
+/// A command's name and arguments exactly as written.
+#[derive(Clone, Serialize)]
+pub(crate) struct RawArgv {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) name: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) args: Vec<String>,
 }
 
 /// One command: a single stage of a pipeline (nested mode). Carries the same fields

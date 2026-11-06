@@ -2,6 +2,7 @@ use brush_parser::ast;
 
 use crate::extended_test::collect_extended_test_subs;
 use crate::redirect::collect_redirect_list_subs;
+use crate::resolve::{ResolvedArgv, resolve_argv};
 use crate::simple::{collect_expansions, prefix_assignments, simple_redirects, suffix_args};
 use crate::types::{Loc, LoopId, LoopKind, LoopWalked, Section, Stage, StageId, Sub, Walked};
 use crate::unroll::{self, Subst};
@@ -129,12 +130,25 @@ fn walk_command(command: &ast::Command, piped_from_previous: bool, ctx: &mut Ctx
             {
                 ctx.poisoned = true;
             }
+            let ResolvedArgv {
+                name,
+                args,
+                raw,
+                dynamic_name,
+                dynamic_args,
+            } = resolve_argv(
+                simple.word_or_name.as_ref().map(|w| w.value.clone()),
+                suffix_args(simple),
+            );
             ctx.out.push(Walked {
                 stage: Stage {
                     command: simple.to_string(),
                     assignments: prefix_assignments(simple),
-                    name: simple.word_or_name.as_ref().map(|w| w.value.clone()),
-                    args: suffix_args(simple),
+                    name,
+                    args,
+                    raw,
+                    dynamic_name,
+                    dynamic_args,
                     redirects: simple_redirects(simple),
                     in_loop: scope.in_loop,
                     variables,

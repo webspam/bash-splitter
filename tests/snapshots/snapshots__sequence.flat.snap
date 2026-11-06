@@ -8,8 +8,14 @@ expression: "split(input, true).expect(\"parse\")"
       "command": "echo \"start\"",
       "name": "echo",
       "args": [
-        "\"start\""
-      ]
+        "start"
+      ],
+      "raw": {
+        "name": "echo",
+        "args": [
+          "\"start\""
+        ]
+      }
     }
   ],
   [
@@ -17,8 +23,14 @@ expression: "split(input, true).expect(\"parse\")"
       "command": "echo \"middle\"",
       "name": "echo",
       "args": [
-        "\"middle\""
-      ]
+        "middle"
+      ],
+      "raw": {
+        "name": "echo",
+        "args": [
+          "\"middle\""
+        ]
+      }
     }
   ],
   [
@@ -26,8 +38,14 @@ expression: "split(input, true).expect(\"parse\")"
       "command": "echo \"end\"",
       "name": "echo",
       "args": [
-        "\"end\""
-      ]
+        "end"
+      ],
+      "raw": {
+        "name": "echo",
+        "args": [
+          "\"end\""
+        ]
+      }
     }
   ]
 ]

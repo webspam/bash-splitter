@@ -9,6 +9,9 @@ expression: "split(input, true).expect(\"parse\")"
       "name": "cd",
       "args": [
         "\"$(echo pie)\""
+      ],
+      "dynamic_args": [
+        0
       ]
     }
   ],

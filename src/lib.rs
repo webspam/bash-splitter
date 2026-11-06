@@ -7,6 +7,7 @@ mod extended_test;
 mod params;
 mod pipeline;
 mod redirect;
+mod resolve;
 mod simple;
 mod types;
 mod unroll;
