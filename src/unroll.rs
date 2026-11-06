@@ -68,7 +68,7 @@ pub(crate) fn stage_breaks_unroll(
     if active.iter().any(|s| variables.iter().any(|v| v == s.var)) {
         return true;
     }
-    if invokes_unroll_breaking_command(argv) {
+    if invokes_unroll_breaking_command(argv) || has_unexpandable_brace_word(simple, active) {
         return true;
     }
     prefix_suffix_items(simple).any(|item| match item {
@@ -110,6 +110,23 @@ fn invokes_unroll_breaking_command(argv: &ResolvedArgv) -> bool {
         return UNROLL_BREAKING_COMMANDS.contains(&word);
     }
     false
+}
+
+fn has_unexpandable_brace_word(simple: &ast::SimpleCommand, active: &[Subst]) -> bool {
+    let suffix_words = simple
+        .suffix
+        .iter()
+        .flat_map(|s| &s.0)
+        .filter_map(|item| match item {
+            ast::CommandPrefixOrSuffixItem::Word(w)
+            | ast::CommandPrefixOrSuffixItem::AssignmentWord(_, w) => Some(w),
+            _ => None,
+        });
+    simple
+        .word_or_name
+        .iter()
+        .chain(suffix_words)
+        .any(|w| mentions_any(&w.value, active) && brace_expand(&w.value).is_none())
 }
 
 fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {

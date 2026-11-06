@@ -2,6 +2,7 @@ use brush_parser::ParserOptions;
 use brush_parser::word::{self, WordPiece, WordPieceWithSource};
 
 use crate::params::{collect_param_expr_words, param_name, param_of, param_subscript};
+use crate::resolve::brace_expand;
 use crate::types::{StageId, Sub};
 
 /// Appends `v` unless already present, keeping first-seen order.
@@ -22,6 +23,18 @@ pub(crate) fn collect_word_expansions(
         return;
     };
     collect_piece_expansions(&pieces, parent, vars, subs);
+}
+
+pub(crate) fn collect_brace_expanded_expansions(
+    word: &str,
+    parent: Option<StageId>,
+    vars: &mut Vec<String>,
+    subs: &mut Vec<Sub>,
+) {
+    collect_word_subs(word, parent, subs);
+    for expanded in brace_expand(word).unwrap_or_else(|| vec![word.to_owned()]) {
+        collect_word_expansions(&expanded, parent, vars, &mut Vec::new());
+    }
 }
 
 fn collect_piece_expansions(

@@ -197,6 +197,42 @@ fn default_value_variable_is_collected() {
     );
 }
 
+#[test]
+fn brace_expansion_runs_before_parameter_expansion() {
+    let cmds = split("echo $f{danger,}");
+    assert_eq!(variables(&cmds[0]), ["fdanger", "f"]);
+}
+
+#[test]
+fn brace_expansion_glues_every_alternative() {
+    let cmds = split("echo $f{a,b}");
+    assert_eq!(variables(&cmds[0]), ["fa", "fb"]);
+}
+
+#[test]
+fn brace_expansion_can_form_a_parameter() {
+    let cmds = split("echo {$,x}f");
+    assert_eq!(variables(&cmds[0]), ["f"]);
+}
+
+#[test]
+fn redirect_target_is_brace_expanded() {
+    let cmds = split("echo hi > $f{danger,}");
+    assert_eq!(variables(&cmds[0]), ["fdanger", "f"]);
+}
+
+#[test]
+fn here_string_is_not_brace_expanded() {
+    let cmds = split("cat <<< $f{a,b}");
+    assert_eq!(variables(&cmds[0]), ["f"]);
+}
+
+#[test]
+fn prefix_assignment_is_not_brace_expanded() {
+    let cmds = split("FOO=$f{a,b} cmd");
+    assert_eq!(variables(stage(&cmds, "cmd")), ["f"]);
+}
+
 // ---- backward compatibility ----
 
 #[test]
