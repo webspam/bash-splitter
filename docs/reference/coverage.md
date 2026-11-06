@@ -21,7 +21,7 @@ A command hidden inside an expansion still runs, so it is surfaced too: in flat 
 
 | Location             | Example                                                       | Notes                                                                                                   |
 | -------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Command substitution | `echo $(rm -rf /)`, backquotes                                | Included inside double quotes too.                                                                      |
+| Command substitution | `echo $(cmd)`, backquotes                                     | Included inside double quotes too.                                                                      |
 | Process substitution | `diff <(sort a) <(sort b)`                                    | Both inner commands surfaced.                                                                           |
 | Inside `[[ ... ]]`   | `[[ -n $(cmd) ]]`                                             | The test itself runs nothing, but a substitution in its words does.                                     |
 | Nested               | `echo $(foo $(bar))`                                          | Every level is surfaced.                                                                                |
