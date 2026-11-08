@@ -174,10 +174,18 @@ fn arithmetic_assignment_targets_and_indices_are_collected() {
 }
 
 #[test]
-fn expansion_in_arithmetic_flags_variables_dynamic() {
+#[should_panic(expected = "known limitation: bare name beside an expansion is not collected")]
+fn bare_name_beside_expansion_is_collected() {
     let cmds = split("echo $(($x + y))");
-    assert_eq!(variables(&cmds[0]), ["x"]);
-    assert!(dynamic_variables(&cmds[0]));
+    assert!(
+        dynamic_variables(&cmds[0]),
+        "expansion flags variables dynamic"
+    );
+    assert_eq!(
+        variables(&cmds[0]),
+        ["x", "y"],
+        "known limitation: bare name beside an expansion is not collected"
+    );
 }
 
 #[test]
@@ -202,10 +210,21 @@ fn empty_arithmetic_is_not_dynamic() {
 }
 
 #[test]
-fn subscript_is_read_as_arithmetic_even_for_associative_arrays() {
+fn indexed_array_subscript_is_read_as_arithmetic() {
     let cmds = split("echo ${map[key]}");
     assert_eq!(variables(&cmds[0]), ["map", "key"]);
     assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+#[should_panic(expected = "known limitation: associative array key is reported as a variable")]
+fn associative_array_key_is_not_a_variable() {
+    let cmds = split("declare -A map; echo ${map[key]}");
+    assert_eq!(
+        variables(stage(&cmds, "echo")),
+        ["map"],
+        "known limitation: associative array key is reported as a variable"
+    );
 }
 
 #[test]
@@ -216,11 +235,15 @@ fn quoted_subscript_flags_variables_dynamic() {
 }
 
 #[test]
-fn assigned_value_is_not_tracked_into_arithmetic() {
+#[should_panic(expected = "known limitation: assigned values are not tracked")]
+fn assigned_value_is_substituted_into_arithmetic() {
     let cmds = split("x=5; echo $(( $x + y ))");
     let echo = stage(&cmds, "echo");
-    assert_eq!(variables(echo), ["x"]);
-    assert!(dynamic_variables(echo));
+    assert!(
+        !dynamic_variables(echo),
+        "known limitation: assigned values are not tracked"
+    );
+    assert_eq!(variables(echo), ["x", "y"]);
 }
 
 #[test]

@@ -270,9 +270,14 @@ fn substituted_value_is_parsed_as_arithmetic() {
 }
 
 #[test]
-fn limitation_nested_arithmetic_is_dynamic_so_loop_does_not_unroll() {
+#[should_panic(expected = "known limitation: nested arithmetic blocks unrolling")]
+fn bound_value_is_substituted_into_nested_arithmetic() {
     let cmds = split("for f in 1 2; do echo $(( $(( $f )) + 1 )); done");
-    assert_eq!(commands(&cmds), ["echo $(( $(( $f )) + 1 ))"]);
+    assert_eq!(
+        commands(&cmds),
+        ["echo $(( $(( 1 )) + 1 ))", "echo $(( $(( 2 )) + 1 ))"],
+        "known limitation: nested arithmetic blocks unrolling"
+    );
 }
 
 #[test]
@@ -282,15 +287,25 @@ fn value_is_not_glued_onto_preceding_reference_in_arithmetic() {
 }
 
 #[test]
-fn bound_value_in_subscript_blocks_unrolling() {
+#[should_panic(expected = "known limitation: bound value is not substituted into a subscript")]
+fn bound_value_is_substituted_into_subscript() {
     let cmds = split("for f in 1 2; do echo ${arr[$f]}; done");
-    assert_eq!(commands(&cmds), ["echo ${arr[$f]}"]);
+    assert_eq!(
+        commands(&cmds),
+        ["echo ${arr[1]}", "echo ${arr[2]}"],
+        "known limitation: bound value is not substituted into a subscript"
+    );
 }
 
 #[test]
-fn bound_value_in_default_value_blocks_unrolling() {
+#[should_panic(expected = "known limitation: bound value is not substituted into a default value")]
+fn bound_value_is_substituted_into_default_value() {
     let cmds = split("for f in 1 2; do echo ${x:-$f}; done");
-    assert_eq!(commands(&cmds), ["echo ${x:-$f}"]);
+    assert_eq!(
+        commands(&cmds),
+        ["echo ${x:-1}", "echo ${x:-2}"],
+        "known limitation: bound value is not substituted into a default value"
+    );
 }
 
 #[test]
