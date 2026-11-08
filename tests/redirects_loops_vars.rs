@@ -113,6 +113,13 @@ fn heredoc_unbalanced_quote_still_expands() {
 }
 
 #[test]
+fn unrolled_heredoc_substitutes_inside_single_quotes() {
+    let cmds = split("for f in a; do cat <<EOF\n'$f'\nEOF\ndone");
+    let doc = &redirects(&cmds[0])[0]["heredoc"];
+    assert_eq!(field(doc, "body"), Some("'a'\n"), "$f should become a");
+}
+
+#[test]
 fn here_string_is_tagged() {
     let cmds = split("cat <<< \"$foo\"");
     let r = &redirects(&cmds[0])[0];
