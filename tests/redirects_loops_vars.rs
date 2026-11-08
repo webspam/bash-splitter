@@ -16,6 +16,13 @@ fn field<'a>(redirect: &'a Value, key: &str) -> Option<&'a str> {
     redirect.get(key).and_then(Value::as_str)
 }
 
+fn is_dynamic(redirect: &Value) -> bool {
+    redirect
+        .get("dynamic")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 // ---- redirects ----
 
 #[test]
@@ -63,6 +70,119 @@ fn process_substitution_target_is_tagged_and_surfaces() {
     assert_eq!(field(r, "kind"), Some("process_sub"));
     // The inner command still surfaces as its own pipeline.
     assert!(cmds.iter().any(|c| name(c) == Some("tee")));
+}
+
+// ---- dynamic redirect targets ----
+
+#[test]
+fn static_file_target_is_not_dynamic() {
+    let cmds = split("cmd > out.txt");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+    assert_eq!(field(r, "target"), Some("out.txt"));
+}
+
+#[test]
+fn quoted_file_target_resolves_and_is_static() {
+    let cmds = split("cmd > \"out dir/log.txt\"");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+    assert_eq!(field(r, "target"), Some("out dir/log.txt"));
+}
+
+#[test]
+fn parameter_file_target_is_dynamic() {
+    let cmds = split("cmd > $out");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+    assert_eq!(field(r, "target"), Some("$out"));
+}
+
+#[test]
+fn command_substitution_target_is_dynamic() {
+    let cmds = split("cmd > $(date).log");
+    let r = &redirects(stage(&cmds, "cmd"))[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn glob_target_is_dynamic() {
+    let cmds = split("cmd > logs/*.txt");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn tilde_target_is_dynamic() {
+    let cmds = split("cmd > ~/out.txt");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn quoted_tilde_target_is_static() {
+    let cmds = split("cmd > \"~/out.txt\"");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r), "quotes suppress tilde expansion");
+    assert_eq!(field(r, "target"), Some("~/out.txt"));
+}
+
+#[test]
+fn fd_duplication_is_static() {
+    let cmds = split("cmd 2>&1");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn fd_duplication_to_variable_is_dynamic() {
+    let cmds = split("cmd >&$fd");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("fd"));
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn process_substitution_target_is_dynamic() {
+    let cmds = split("cmd > >(tee log)");
+    let r = &redirects(stage(&cmds, "cmd"))[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn here_string_with_variable_is_dynamic() {
+    let cmds = split("cat <<< \"$foo\"");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn literal_here_string_is_static() {
+    let cmds = split("cat <<< hello");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+    assert_eq!(field(r, "target"), Some("hello"));
+}
+
+#[test]
+fn expanding_heredoc_with_variable_is_dynamic() {
+    let cmds = split("cat <<EOF\nhello $name\nEOF\n");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn expanding_heredoc_without_refs_is_static() {
+    let cmds = split("cat <<EOF\nhello world\nEOF\n");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn quoted_heredoc_is_static() {
+    let cmds = split("cat <<'EOF'\nliteral $x\nEOF\n");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
 }
 
 // ---- heredocs ----

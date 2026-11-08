@@ -99,6 +99,17 @@ pub(crate) fn resolve_argv(raw_name: Option<String>, source_args: Vec<SourceWord
     }
 }
 
+/// Resolves a redirect target word. Bash subjects it to parameter, command, and
+/// arithmetic expansion, tilde expansion, and quote removal, but not brace expansion
+/// or word splitting. When every piece is statically known, returns the quote-removed
+/// text; otherwise returns the raw word flagged dynamic.
+pub(crate) fn resolve_redirect_target(raw: &str) -> (String, bool) {
+    match remove_quotes(raw) {
+        Some(text) => (text, false),
+        None => (raw.to_owned(), true),
+    }
+}
+
 fn resolve_word(raw: &str) -> Vec<Word> {
     match brace_expand(raw) {
         Some(expanded) => expanded

@@ -1,5 +1,6 @@
 use brush_parser::ast;
 
+use crate::resolve::resolve_redirect_target;
 use crate::types::{HereDoc, Redirect, StageId, Sub, Variables};
 use crate::word::{
     collect_brace_expanded_expansions, collect_heredoc_expansions, collect_word_expansions,
@@ -11,33 +12,49 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
     use ast::IoRedirect as R;
     match redirect {
         R::File(fd, op, target) => {
-            let kind = match target {
-                T::Filename(_) => "file",
-                T::Fd(_) | T::Duplicate(_) => "fd",
-                T::ProcessSubstitution(_, _) => "process_sub",
+            let (kind, text, dynamic) = match target {
+                T::Filename(w) => {
+                    let (text, dynamic) = resolve_redirect_target(&w.value);
+                    ("file", text, dynamic)
+                }
+                T::Duplicate(w) => {
+                    let (text, dynamic) = resolve_redirect_target(&w.value);
+                    ("fd", text, dynamic)
+                }
+                T::Fd(_) => ("fd", target.to_string(), false),
+                T::ProcessSubstitution(_, _) => ("process_sub", target.to_string(), true),
             };
             Redirect {
                 fd: *fd,
                 op: op.to_string(),
                 kind,
-                target: Some(target.to_string()),
+                target: Some(text),
                 heredoc: None,
+                dynamic,
             }
         }
-        R::OutputAndError(target, append) => Redirect {
-            fd: None,
-            op: if *append { "&>>" } else { "&>" }.to_string(),
-            kind: "file",
-            target: Some(target.value.clone()),
-            heredoc: None,
-        },
-        R::HereString(fd, word) => Redirect {
-            fd: *fd,
-            op: "<<<".to_string(),
-            kind: "herestring",
-            target: Some(word.value.clone()),
-            heredoc: None,
-        },
+        R::OutputAndError(target, append) => {
+            let (text, dynamic) = resolve_redirect_target(&target.value);
+            Redirect {
+                fd: None,
+                op: if *append { "&>>" } else { "&>" }.to_string(),
+                kind: "file",
+                target: Some(text),
+                heredoc: None,
+                dynamic,
+            }
+        }
+        R::HereString(fd, word) => {
+            let (text, dynamic) = resolve_redirect_target(&word.value);
+            Redirect {
+                fd: *fd,
+                op: "<<<".to_string(),
+                kind: "herestring",
+                target: Some(text),
+                heredoc: None,
+                dynamic,
+            }
+        }
         R::HereDocument(fd, doc) => Redirect {
             fd: *fd,
             op: if doc.remove_tabs { "<<-" } else { "<<" }.to_string(),
@@ -48,8 +65,21 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
                 expands: doc.requires_expansion,
                 body: doc.doc.value.clone(),
             }),
+            dynamic: heredoc_is_dynamic(doc),
         },
     }
+}
+
+/// A heredoc body is dynamic when its delimiter is unquoted (so it expands) and the
+/// body actually references a parameter or command, or cannot be parsed.
+fn heredoc_is_dynamic(doc: &ast::IoHereDocument) -> bool {
+    if !doc.requires_expansion {
+        return false;
+    }
+    let mut vars = Variables::default();
+    let mut subs = Vec::new();
+    collect_heredoc_expansions(&doc.doc.value, None, &mut vars, &mut subs);
+    vars.dynamic || !vars.names.is_empty() || !subs.is_empty()
 }
 
 /// The one word a redirect expands: its target, or an unquoted heredoc body.

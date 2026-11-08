@@ -142,6 +142,11 @@ pub(crate) struct Redirect {
     /// Present only for heredocs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) heredoc: Option<HereDoc>,
+    /// True when `target` (or a heredoc body) could not be statically resolved: it
+    /// expands a parameter, command, arithmetic, glob, or tilde, so the real contents
+    /// are only known at runtime. A process substitution is always dynamic.
+    #[serde(skip_serializing_if = "<&bool as std::ops::Not>::not")]
+    pub(crate) dynamic: bool,
 }
 
 /// A heredoc body and how bash treats it.
