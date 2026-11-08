@@ -1,5 +1,6 @@
 use brush_parser::ast;
 
+use crate::Error;
 use crate::extended_test::collect_extended_test_subs;
 use crate::redirect::collect_redirect_list_subs;
 use crate::resolve::resolve_argv;
@@ -22,6 +23,7 @@ pub(crate) struct Ctx<'a> {
     /// Set when something under an unroll attempt shows it would be incorrect; the
     /// attempt rolls back and re-walks the loop as a single body.
     poisoned: bool,
+    rejection: Option<&'static str>,
 }
 
 impl<'a> Ctx<'a> {
@@ -39,6 +41,18 @@ impl<'a> Ctx<'a> {
             unroll,
             nested,
             poisoned: false,
+            rejection: None,
+        }
+    }
+
+    pub(crate) fn reject_unsupported(&self) -> Result<(), Error> {
+        self.rejection
+            .map_or(Ok(()), |construct| Err(Error::Unsupported(construct)))
+    }
+
+    fn note_redirects(&mut self, redirects: Option<&ast::RedirectList>) {
+        if redirects.is_some_and(|r| !r.0.is_empty()) {
+            self.rejection = Some("redirect on a compound command, [[ ]], or function definition");
         }
     }
 
@@ -152,6 +166,7 @@ fn walk_command(command: &ast::Command, piped_from_previous: bool, ctx: &mut Ctx
         // Descend so commands nested in the compound surface individually. As a
         // pipeline stage (`foo | (grep x)`), its first inner command takes the pipe.
         ast::Command::Compound(compound, redirects) => {
+            ctx.note_redirects(redirects.as_ref());
             let start = ctx.out.len();
             walk_compound_command(compound, ctx, scope);
             apply_pipe_boundary(&mut ctx.out[start..], piped_from_previous);
@@ -162,6 +177,7 @@ fn walk_command(command: &ast::Command, piped_from_previous: bool, ctx: &mut Ctx
         // iteration's value into the definition. The definition still sits in the
         // enclosing loop object structurally, so `loc` is kept.
         ast::Command::Function(f) => {
+            ctx.note_redirects(f.body.1.as_ref());
             if !scope.active.is_empty() {
                 ctx.poisoned = true;
             }
@@ -177,6 +193,7 @@ fn walk_command(command: &ast::Command, piped_from_previous: bool, ctx: &mut Ctx
         }
         // `[[ ... ]]` runs no command, but its words and redirects can hide substitutions.
         ast::Command::ExtendedTest(e, redirects) => {
+            ctx.note_redirects(redirects.as_ref());
             collect_extended_test_subs(&e.expr, ctx.subs);
             collect_redirect_list_subs(redirects.as_ref(), ctx.subs);
         }

@@ -192,12 +192,6 @@ fn substitution_in_nested_for_values_blocks_unrolling() {
 }
 
 #[test]
-fn substitution_in_compound_redirect_blocks_unrolling() {
-    let cmds = split("for f in a b; do { ls; } > $(dir $f); done");
-    assert_eq!(commands(&cmds), ["ls", "dir $f"]);
-}
-
-#[test]
 fn arithmetic_command_on_loop_var_blocks_unrolling() {
     // `(( i+=1 ))` reassigns `i` without becoming a stage, so it must still block.
     let cmds = split("for i in 1 2; do ((i+=1)); echo $i; done");

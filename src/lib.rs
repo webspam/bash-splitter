@@ -22,17 +22,24 @@ pub use types::{Iteration, NestedItem, NestedLoop, NestedStage, Stage};
 use types::{LoopWalked, Walked};
 use walk::{Ctx, Scope, walk_compound_list};
 
-/// A parse error from the input command.
 #[derive(Debug)]
-pub struct ParseError(String);
+pub enum Error {
+    /// Unable to parse the input command(s).
+    Parse(String),
+    /// bash syntax that the splitter does not support was detected.
+    Unsupported(&'static str),
+}
 
-impl std::fmt::Display for ParseError {
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        match self {
+            Error::Parse(message) => write!(f, "parse error: {message}"),
+            Error::Unsupported(construct) => write!(f, "unsupported: {construct}"),
+        }
     }
 }
 
-impl std::error::Error for ParseError {}
+impl std::error::Error for Error {}
 
 /// Splits `input` into flat pipelines of stages (default mode).
 /// All commands, including those from substitutions, appear as top-level pipelines.
@@ -42,8 +49,8 @@ impl std::error::Error for ParseError {}
 ///
 /// # Errors
 ///
-/// Returns [`ParseError`] when `input` does not parse as a bash program.
-pub fn split(input: &str, unroll: bool) -> Result<Vec<Vec<Stage>>, ParseError> {
+/// Returns [`Error`] when `input` cannot be split.
+pub fn split(input: &str, unroll: bool) -> Result<Vec<Vec<Stage>>, Error> {
     let (commands, _) = walk_and_unroll(input, unroll, false)?;
     Ok(build_flat_pipelines(&commands))
 }
@@ -55,8 +62,8 @@ pub fn split(input: &str, unroll: bool) -> Result<Vec<Vec<Stage>>, ParseError> {
 ///
 /// # Errors
 ///
-/// Returns [`ParseError`] when `input` does not parse as a bash program.
-pub fn split_nested(input: &str, unroll: bool) -> Result<Vec<NestedItem>, ParseError> {
+/// Returns [`Error`] when `input` cannot be split.
+pub fn split_nested(input: &str, unroll: bool) -> Result<Vec<NestedItem>, Error> {
     let (commands, loops) = walk_and_unroll(input, unroll, true)?;
     Ok(build_nested(&commands, &loops))
 }
@@ -65,11 +72,11 @@ fn walk_and_unroll(
     input: &str,
     unroll: bool,
     nested: bool,
-) -> Result<(Vec<Walked>, Vec<LoopWalked>), ParseError> {
+) -> Result<(Vec<Walked>, Vec<LoopWalked>), Error> {
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
     let program = parser
         .parse_program()
-        .map_err(|e| ParseError(e.to_string()))?;
+        .map_err(|e| Error::Parse(e.to_string()))?;
 
     let mut commands = Vec::new();
     let mut subs = Vec::new();
@@ -77,6 +84,7 @@ fn walk_and_unroll(
     for complete_command in &program.complete_commands {
         let mut ctx = Ctx::new(&mut commands, &mut subs, &mut loops, unroll, nested);
         walk_compound_list(complete_command, &mut ctx, Scope::root());
+        ctx.reject_unsupported()?;
     }
     expand_substitutions(&mut commands, &mut loops, subs, unroll, nested)?;
 

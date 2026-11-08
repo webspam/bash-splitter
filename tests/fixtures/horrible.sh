@@ -11,7 +11,7 @@ producer | { read -r first; echo "$first" | tr a-z A-Z; } | cat -n
 # one large control-flow command
 for d in `find . -type d` $(ls -d /tmp/*/); do
     if [ -n "$d" ] && [[ "$d" =~ ^/.*$ ]]; then
-        while read -r line; do
+        cat <(ls "$d"/*.log) 2>/dev/null | while read -r line; do
             case "$line" in
                 *.log)
                     LD_PRELOAD=hook.so grep -E "`echo "$(basename "$d")"`" "$line" \
@@ -23,7 +23,7 @@ for d in `find . -type d` $(ls -d /tmp/*/); do
                     ( cd "$d" && { tar cf - . | gzip > "$d.tgz"; } )
                     ;;
             esac
-        done < <(cat "$d"/*.log 2>/dev/null)
+        done
     elif [ "`id -u`" -eq 0 ]; then
         for i in $(seq 1 `nproc`); do
             echo "spawning $i" && nohup worker --id="$i" --root="`pwd`" &

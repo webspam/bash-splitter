@@ -24,4 +24,4 @@ Each entry in a stage's `redirects` array describes one I/O redirect, in source 
 
 Carries the `delimiter`, an `expands` flag (false when the delimiter is quoted, e.g. `<<'EOF'`), and the raw `body`.
 
-A redirect hanging off a compound command (`while ...; done > log`) is not attached to any stage, but a command it hides is still surfaced.
+Input with a redirect on a compound command (`while ...; done > log`) is rejected via exit code 3.
