@@ -19,6 +19,19 @@ pub(crate) fn collect_word_expansions(
     collect_piece_expansions(&pieces, parent, vars, subs);
 }
 
+pub(crate) fn collect_heredoc_expansions(
+    body: &str,
+    parent: Option<StageId>,
+    vars: &mut Variables,
+    subs: &mut Vec<Sub>,
+) {
+    let Ok(pieces) = word::parse_heredoc(body, &ParserOptions::default()) else {
+        vars.dynamic = true;
+        return;
+    };
+    collect_piece_expansions(&pieces, parent, vars, subs);
+}
+
 pub(crate) fn collect_brace_expanded_expansions(
     word: &str,
     parent: Option<StageId>,
