@@ -2,7 +2,7 @@
 //! feeds a bash string and asserts on the metadata attached to the split stages.
 
 mod common;
-use common::{in_loop, name, redirects, split, variables};
+use common::{dynamic_variables, in_loop, name, redirects, split, variables};
 use serde_json::Value;
 
 /// The one stage named `n`.
@@ -162,16 +162,88 @@ fn bare_arithmetic_names_are_collected() {
 }
 
 #[test]
-fn dollar_names_in_arithmetic_are_not_doubled() {
+fn parsed_arithmetic_is_not_dynamic() {
+    let cmds = split("echo $((count + 1))");
+    assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn arithmetic_assignment_targets_and_indices_are_collected() {
+    let cmds = split("echo $((a = b + c[i], d++))");
+    assert_eq!(variables(&cmds[0]), ["a", "b", "c", "i", "d"]);
+}
+
+#[test]
+#[should_panic(expected = "known limitation: bare name beside an expansion is not collected")]
+fn bare_name_beside_expansion_is_collected() {
     let cmds = split("echo $(($x + y))");
-    assert_eq!(variables(&cmds[0]), ["x", "y"]);
+    assert!(
+        dynamic_variables(&cmds[0]),
+        "expansion flags variables dynamic"
+    );
+    assert_eq!(
+        variables(&cmds[0]),
+        ["x", "y"],
+        "known limitation: bare name beside an expansion is not collected"
+    );
 }
 
 #[test]
 fn bare_subscript_names_are_collected() {
-    // The subscript is an arithmetic context, so `i` is read as a variable.
     let cmds = split("echo ${arr[i]}");
     assert_eq!(variables(&cmds[0]), ["arr", "i"]);
+    assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn expansion_in_subscript_flags_variables_dynamic() {
+    let cmds = split("echo ${arr[$i]}");
+    assert_eq!(variables(&cmds[0]), ["arr", "i"]);
+    assert!(dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn empty_arithmetic_is_not_dynamic() {
+    let cmds = split("echo $(( ))");
+    assert!(variables(&cmds[0]).is_empty());
+    assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn indexed_array_subscript_is_read_as_arithmetic() {
+    let cmds = split("echo ${map[key]}");
+    assert_eq!(variables(&cmds[0]), ["map", "key"]);
+    assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+#[should_panic(expected = "known limitation: associative array key is reported as a variable")]
+fn associative_array_key_is_not_a_variable() {
+    let cmds = split("declare -A map; echo ${map[key]}");
+    assert_eq!(
+        variables(stage(&cmds, "echo")),
+        ["map"],
+        "known limitation: associative array key is reported as a variable"
+    );
+}
+
+#[test]
+fn quoted_subscript_flags_variables_dynamic() {
+    let cmds = split("echo ${map[\"a b\"]}");
+    assert_eq!(variables(&cmds[0]), ["map"]);
+    assert!(dynamic_variables(&cmds[0]));
+}
+
+#[test]
+#[should_panic(expected = "known limitation: assigned values are not tracked")]
+fn assigned_value_is_substituted_into_arithmetic() {
+    let cmds = split("x=5; echo $(( $x + y ))");
+    let echo = stage(&cmds, "echo");
+    assert!(
+        !dynamic_variables(echo),
+        "known limitation: assigned values are not tracked"
+    );
+    assert_eq!(variables(echo), ["x", "y"]);
 }
 
 #[test]

@@ -7,14 +7,17 @@
 //! discarded and the loop re-walked as a single body. The walk is the only
 //! traversal, so the check can never disagree with it about coverage.
 
+use std::borrow::Cow;
+
 use brush_parser::ParserOptions;
 use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
 
+use crate::arithmetic::collect_arithmetic_names;
 use crate::redirect::expanded_word_mut;
 use crate::resolve::{brace_expand, expands_unquoted};
 use crate::simple::prefix_suffix_items;
-use crate::types::ResolvedArgv;
+use crate::types::{ResolvedArgv, Variables};
 use crate::word::is_ident_char;
 
 /// An active loop binding: the variable and the literal it currently expands to.
@@ -62,10 +65,10 @@ pub(crate) fn for_values(f: &ast::ForClauseCommand, unroll: bool) -> Option<Vec<
 pub(crate) fn stage_breaks_unroll(
     simple: &ast::SimpleCommand,
     argv: &ResolvedArgv,
-    variables: &[String],
+    variables: &Variables,
     active: &[Subst],
 ) -> bool {
-    if active.iter().any(|s| variables.iter().any(|v| v == s.var)) {
+    if variables.dynamic || binds_any(&variables.names, active) {
         return true;
     }
     if invokes_unroll_breaking_command(argv) || has_unexpandable_brace_word(simple, active) {
@@ -137,9 +140,23 @@ fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {
     }
 }
 
-/// Whether arithmetic text reads or assigns a bound variable (`(( f++ ))`). Arithmetic
-/// never becomes a stage, so `stage_breaks_unroll` can't catch it.
-pub(crate) fn mentions_any(text: &str, active: &[Subst]) -> bool {
+fn binds_any(names: &[String], active: &[Subst]) -> bool {
+    active.iter().any(|s| names.iter().any(|n| n == s.var))
+}
+
+/// Whether a stage-less arithmetic expression (`(( f++ ))`) may read or assign a
+/// bound variable. Arithmetic never becomes a stage, so `stage_breaks_unroll` can't
+/// catch it.
+pub(crate) fn arithmetic_breaks_unroll(text: &str, active: &[Subst]) -> bool {
+    if active.is_empty() {
+        return false;
+    }
+    let mut vars = Variables::default();
+    collect_arithmetic_names(&substitute_str(text, active), &mut vars);
+    vars.dynamic || binds_any(&vars.names, active)
+}
+
+fn mentions_any(text: &str, active: &[Subst]) -> bool {
     active.iter().any(|s| mentions_identifier(text, s.var))
 }
 
@@ -210,7 +227,7 @@ fn substitute_str(value: &str, active: &[Subst]) -> String {
         return value.to_string();
     };
     let mut spans = Vec::new();
-    collect_spans(&pieces, active, &mut spans);
+    collect_spans(value, &pieces, active, &mut spans);
     if spans.is_empty() {
         return value.to_string();
     }
@@ -224,7 +241,7 @@ fn substitute_str(value: &str, active: &[Subst]) -> String {
         if repl.starts_with(is_ident_char) && ends_with_bare_ref(&out) {
             out.push_str(&value[start..end]);
         } else {
-            out.push_str(repl);
+            out.push_str(&repl);
         }
         pos = end;
     }
@@ -243,9 +260,10 @@ fn ends_with_bare_ref(text: &str) -> bool {
 /// Collects the source spans of bare `$var`/`${var}` references (including inside
 /// double quotes), paired with the literal to splice in.
 fn collect_spans<'a>(
+    source: &str,
     pieces: &[WordPieceWithSource],
     active: &[Subst<'a>],
-    out: &mut Vec<(usize, usize, &'a str)>,
+    out: &mut Vec<(usize, usize, Cow<'a, str>)>,
 ) {
     for piece in pieces {
         match &piece.piece {
@@ -254,12 +272,24 @@ fn collect_spans<'a>(
                 indirect: false,
             }) => {
                 if let Some(subst) = active.iter().find(|s| s.var == name) {
-                    out.push((piece.start_index, piece.end_index, subst.value));
+                    out.push((piece.start_index, piece.end_index, subst.value.into()));
                 }
             }
             WordPiece::DoubleQuotedSequence(inner)
             | WordPiece::GettextDoubleQuotedSequence(inner) => {
-                collect_spans(inner, active, out);
+                collect_spans(source, inner, active, out);
+            }
+            WordPiece::ArithmeticExpression(a) => {
+                let substituted = substitute_str(&a.value, active);
+                if substituted != a.value {
+                    let opener_len = if source.as_bytes()[piece.start_index + 1] == b'[' {
+                        2
+                    } else {
+                        3
+                    };
+                    let body_start = piece.start_index + opener_len;
+                    out.push((body_start, body_start + a.value.len(), substituted.into()));
+                }
             }
             _ => {}
         }

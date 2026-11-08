@@ -2,7 +2,9 @@
 //! individual commands. Anything needing real expansion is left as a single body.
 
 mod common;
-use common::{args, command_text, in_loop, name, split, split_pipelines_with, variables};
+use common::{
+    args, command_text, dynamic_variables, in_loop, name, split, split_pipelines_with, variables,
+};
 use rstest::rstest;
 use serde_json::Value;
 
@@ -206,6 +208,110 @@ fn arithmetic_command_on_loop_var_blocks_unrolling() {
 fn arithmetic_command_on_other_var_still_unrolls() {
     let cmds = split("for f in a b; do ((x++)); echo $f; done");
     assert_eq!(commands(&cmds), ["echo a", "echo b"]);
+}
+
+#[test]
+fn dynamic_arithmetic_in_stage_blocks_unrolling() {
+    let cmds = split("for f in a b; do echo $(($x + 1)); echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $(($x + 1))", "echo $f"]);
+}
+
+#[test]
+fn bound_value_is_substituted_into_arithmetic() {
+    let cmds = split("for f in 1 2; do echo $(( $f + y )); done");
+    assert_eq!(commands(&cmds), ["echo $(( 1 + y ))", "echo $(( 2 + y ))"]);
+    for cmd in &cmds {
+        assert_eq!(variables(cmd), ["y"]);
+        assert!(!dynamic_variables(cmd));
+    }
+}
+
+#[test]
+fn bound_value_is_substituted_into_quoted_arithmetic() {
+    let cmds = split("for f in 1 2; do echo \"$(( $f ))\"; done");
+    assert_eq!(commands(&cmds), ["echo \"$(( 1 ))\"", "echo \"$(( 2 ))\""]);
+}
+
+#[test]
+fn arithmetic_command_reading_bound_value_still_unrolls() {
+    let cmds = split("for f in 1 2; do (( $f + 1 )); echo $f; done");
+    assert_eq!(commands(&cmds), ["echo 1", "echo 2"]);
+}
+
+#[test]
+fn legacy_arithmetic_syntax_is_preserved_when_substituted() {
+    let cmds = split("for f in 1 2; do echo $[ $f + 1 ]; done");
+    assert_eq!(commands(&cmds), ["echo $[ 1 + 1 ]", "echo $[ 2 + 1 ]"]);
+}
+
+#[test]
+fn unparseable_arithmetic_command_outside_loop_does_not_stop_walk() {
+    let cmds = split("(( $x )); echo hi");
+    assert_eq!(commands(&cmds), ["echo hi"]);
+}
+
+#[test]
+fn unparseable_arithmetic_for_outside_unroll_walks_body() {
+    let cmds = split("for ((i=$n; i<3; i++)); do echo hi; done");
+    assert_eq!(commands(&cmds), ["echo hi"]);
+}
+
+#[test]
+fn substituted_arithmetic_that_fails_to_parse_blocks_unrolling() {
+    let cmds = split("for f in 1 2; do (( $f++ )); echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $f"]);
+}
+
+#[test]
+fn substituted_value_is_parsed_as_arithmetic() {
+    let cmds = split("for f in a-b; do echo $(( $f * 2 )); done");
+    assert_eq!(commands(&cmds), ["echo $(( a-b * 2 ))"]);
+    assert_eq!(variables(&cmds[0]), ["a", "b"]);
+}
+
+#[test]
+#[should_panic(expected = "known limitation: nested arithmetic blocks unrolling")]
+fn bound_value_is_substituted_into_nested_arithmetic() {
+    let cmds = split("for f in 1 2; do echo $(( $(( $f )) + 1 )); done");
+    assert_eq!(
+        commands(&cmds),
+        ["echo $(( $(( 1 )) + 1 ))", "echo $(( $(( 2 )) + 1 ))"],
+        "known limitation: nested arithmetic blocks unrolling"
+    );
+}
+
+#[test]
+fn value_is_not_glued_onto_preceding_reference_in_arithmetic() {
+    let cmds = split("for f in 1 2; do echo $(( $g$f )); done");
+    assert_eq!(commands(&cmds), ["echo $(( $g$f ))"]);
+}
+
+#[test]
+#[should_panic(expected = "known limitation: bound value is not substituted into a subscript")]
+fn bound_value_is_substituted_into_subscript() {
+    let cmds = split("for f in 1 2; do echo ${arr[$f]}; done");
+    assert_eq!(
+        commands(&cmds),
+        ["echo ${arr[1]}", "echo ${arr[2]}"],
+        "known limitation: bound value is not substituted into a subscript"
+    );
+}
+
+#[test]
+#[should_panic(expected = "known limitation: bound value is not substituted into a default value")]
+fn bound_value_is_substituted_into_default_value() {
+    let cmds = split("for f in 1 2; do echo ${x:-$f}; done");
+    assert_eq!(
+        commands(&cmds),
+        ["echo ${x:-1}", "echo ${x:-2}"],
+        "known limitation: bound value is not substituted into a default value"
+    );
+}
+
+#[test]
+fn dynamic_arithmetic_command_blocks_unrolling() {
+    let cmds = split("for f in a b; do (($x)); echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $f"]);
 }
 
 #[test]

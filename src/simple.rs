@@ -2,7 +2,7 @@ use brush_parser::ast;
 
 use crate::redirect::{collect_redirect_expansions, redirect_of};
 use crate::resolve::SourceWord;
-use crate::types::{Redirect, StageId, Sub};
+use crate::types::{Redirect, StageId, Sub, Variables};
 use crate::word::{collect_brace_expanded_expansions, collect_word_expansions};
 
 /// Env assignments preceding the command name. Only [`AssignmentWord`](ast::CommandPrefixOrSuffixItem::AssignmentWord)s count; a prefix
@@ -67,8 +67,8 @@ pub(crate) fn collect_expansions(
     simple: &ast::SimpleCommand,
     parent: StageId,
     subs: &mut Vec<Sub>,
-) -> Vec<String> {
-    let mut vars = Vec::new();
+) -> Variables {
+    let mut vars = Variables::default();
     for item in simple.prefix.iter().flat_map(|p| &p.0) {
         item_expansions(item, parent, collect_word_expansions, &mut vars, subs);
     }
@@ -90,8 +90,8 @@ pub(crate) fn collect_expansions(
 fn item_expansions(
     item: &ast::CommandPrefixOrSuffixItem,
     parent: StageId,
-    collect_word: fn(&str, Option<StageId>, &mut Vec<String>, &mut Vec<Sub>),
-    vars: &mut Vec<String>,
+    collect_word: fn(&str, Option<StageId>, &mut Variables, &mut Vec<Sub>),
+    vars: &mut Variables,
     subs: &mut Vec<Sub>,
 ) {
     match item {

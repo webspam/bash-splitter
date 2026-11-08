@@ -3,6 +3,7 @@
 //! nested embeds substitutions recursively under their parent command and
 //! represents each loop as an object holding its contents.
 
+mod arithmetic;
 mod extended_test;
 mod params;
 mod pipeline;
