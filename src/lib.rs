@@ -78,7 +78,7 @@ fn walk_and_unroll(
         let mut ctx = Ctx::new(&mut commands, &mut subs, &mut loops, unroll, nested);
         walk_compound_list(complete_command, &mut ctx, Scope::root());
     }
-    expand_substitutions(&mut commands, &mut loops, subs, unroll, nested);
+    expand_substitutions(&mut commands, &mut loops, subs, unroll, nested)?;
 
     Ok((commands, loops))
 }
