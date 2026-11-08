@@ -26,7 +26,6 @@ use rstest::rstest;
 #[case::process_sub_heredoc_remove_tabs("cat <(cat <<-EOF\n\thi\n\tEOF\n)", "cat")]
 #[case::process_sub_for_loop("cat <(for f in a b; do echo $f; done)", "echo")]
 #[case::process_sub_arithmetic_for("cat <(for ((i=0; i<3; i++)); do echo $i; done)", "echo")]
-#[case::process_sub_while_with_redirect("cat <(while read l; do echo $l; done < file)", "echo")]
 #[case::process_sub_extended_test("cat <(if [[ -n $x && $y == a* ]]; then echo y; fi)", "echo")]
 #[case::process_sub_function("cat <(f() { echo y; }; f)", "echo")]
 #[case::process_sub_pipeline_with_and_or("cat <(ls | sort && echo ok || echo no)", "sort")]

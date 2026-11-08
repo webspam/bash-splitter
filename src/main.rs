@@ -3,7 +3,7 @@
 
 use std::io::{Read, Write};
 
-use bash_splitter::{split, split_nested};
+use bash_splitter::{Error, split, split_nested};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -16,25 +16,21 @@ fn main() {
         std::process::exit(1);
     }
 
-    let json = if nested {
-        match split_nested(&input, unroll) {
-            Ok(items) => serde_json::to_string(&items).expect("NestedItem is always serializable"),
-            Err(e) => {
-                eprintln!("bash-splitter: parse error: {e}");
-                std::process::exit(2);
-            }
-        }
+    let result = if nested {
+        split_nested(&input, unroll)
+            .map(|items| serde_json::to_string(&items).expect("NestedItem is always serializable"))
     } else {
-        match split(&input, unroll) {
-            Ok(pipelines) => {
-                serde_json::to_string(&pipelines).expect("Stage is always serializable")
-            }
-            Err(e) => {
-                eprintln!("bash-splitter: parse error: {e}");
-                std::process::exit(2);
-            }
-        }
+        split(&input, unroll).map(|pipelines| {
+            serde_json::to_string(&pipelines).expect("Stage is always serializable")
+        })
     };
+    let json = result.unwrap_or_else(|e| {
+        eprintln!("bash-splitter: {e}");
+        std::process::exit(match e {
+            Error::Parse(_) => 2,
+            Error::Unsupported(_) => 3,
+        });
+    });
 
     // A consumer closing stdout early is normal, not a failure; exit cleanly on the
     // broken pipe rather than panicking.

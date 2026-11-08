@@ -54,6 +54,14 @@ pub fn split_json(input: &str, args: &[&str]) -> Value {
 
 /// Runs the binary expecting a parse failure; returns stderr. Panics on success.
 pub fn split_error(input: &str) -> String {
+    split_failure(input, 2)
+}
+
+pub fn split_unsupported(input: &str) -> String {
+    split_failure(input, 3)
+}
+
+fn split_failure(input: &str, expected_code: i32) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -70,8 +78,8 @@ pub fn split_error(input: &str) -> String {
         .expect("run bash-splitter");
     assert_eq!(
         output.status.code(),
-        Some(2),
-        "expected parse error for {input:?}, stdout: {}",
+        Some(expected_code),
+        "expected exit {expected_code} for {input:?}, stdout: {}",
         String::from_utf8_lossy(&output.stdout)
     );
     String::from_utf8_lossy(&output.stderr).into_owned()
