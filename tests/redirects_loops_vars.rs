@@ -143,6 +143,33 @@ fn fd_duplication_to_variable_is_dynamic() {
 }
 
 #[test]
+fn fd_word_filename_is_a_static_file_not_a_descriptor() {
+    let cmds = split("cmd >&fail");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "op"), Some(">&"));
+    assert_eq!(field(r, "kind"), Some("file"));
+    assert_eq!(field(r, "target"), Some("fail"));
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn fd_close_dash_is_a_descriptor() {
+    let cmds = split("cmd 2>&-");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("fd"));
+    assert_eq!(field(r, "target"), Some("-"));
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn fd_move_is_a_descriptor() {
+    let cmds = split("cmd 3>&1-");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("fd"));
+    assert_eq!(field(r, "target"), Some("1-"));
+}
+
+#[test]
 fn process_substitution_target_is_dynamic() {
     let cmds = split("cmd > >(tee log)");
     let r = &redirects(stage(&cmds, "cmd"))[0];

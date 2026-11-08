@@ -19,7 +19,12 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
                 }
                 T::Duplicate(w) => {
                     let (text, dynamic) = resolve_redirect_target(&w.value);
-                    ("fd", text, dynamic)
+                    let kind = if dynamic || is_fd_spec(&text) {
+                        "fd"
+                    } else {
+                        "file"
+                    };
+                    (kind, text, dynamic)
                 }
                 T::Fd(_) => ("fd", target.to_string(), false),
                 T::ProcessSubstitution(_, _) => ("process_sub", target.to_string(), true),
@@ -68,6 +73,12 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
             dynamic: heredoc_is_dynamic(doc),
         },
     }
+}
+
+/// If a redirect `>&target` is actually a descriptor.
+fn is_fd_spec(text: &str) -> bool {
+    let digits = text.strip_suffix('-').unwrap_or(text);
+    text == "-" || (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// A heredoc body is dynamic when its delimiter is unquoted (so it expands) and the
