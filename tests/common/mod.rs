@@ -52,6 +52,31 @@ pub fn split_json(input: &str, args: &[&str]) -> Value {
     })
 }
 
+/// Runs the binary expecting a parse failure; returns stderr. Panics on success.
+pub fn split_error(input: &str) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_bash-splitter"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child
+                .stdin
+                .take()
+                .expect("child stdin")
+                .write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .expect("run bash-splitter");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "expected parse error for {input:?}, stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
 /// Runs the binary and flattens the grouped output to a single command list, in
 /// source order. Each stage is augmented with `piped_from_previous`/`pipes_to_next`
 /// re-derived from its index in its pipeline, so the position-agnostic tests assert
