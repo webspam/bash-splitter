@@ -97,6 +97,29 @@ fn quoted_heredoc_does_not_expand() {
 }
 
 #[test]
+fn heredoc_single_quotes_are_literal_and_body_expands() {
+    let cmds = split("cat <<EOF\n'$x' \"$y\"\nEOF\n");
+    assert_eq!(
+        variables(&cmds[0]),
+        ["x", "y"],
+        "quotes don't quote in a heredoc"
+    );
+}
+
+#[test]
+fn heredoc_unbalanced_quote_still_expands() {
+    let cmds = split("cat <<EOF\nit's $x\nEOF\n");
+    assert_eq!(variables(&cmds[0]), ["x"], "a stray apostrophe hid $x");
+}
+
+#[test]
+fn unrolled_heredoc_substitutes_inside_single_quotes() {
+    let cmds = split("for f in a; do cat <<EOF\n'$f'\nEOF\ndone");
+    let doc = &redirects(&cmds[0])[0]["heredoc"];
+    assert_eq!(field(doc, "body"), Some("'a'\n"), "$f should become a");
+}
+
+#[test]
 fn here_string_is_tagged() {
     let cmds = split("cat <<< \"$foo\"");
     let r = &redirects(&cmds[0])[0];

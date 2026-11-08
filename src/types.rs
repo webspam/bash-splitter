@@ -22,6 +22,7 @@ pub struct Stage {
     /// first-seen order. A single-quoted or quoted-heredoc reference contributes none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) variables: Vec<String>,
+    /// True when the stage contains variables that could not be statically analysed.
     #[serde(skip_serializing_if = "<&bool as std::ops::Not>::not")]
     pub(crate) dynamic_variables: bool,
 }

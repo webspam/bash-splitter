@@ -194,6 +194,9 @@ fn substitute_item(item: &mut ast::CommandPrefixOrSuffixItem, active: &[Subst]) 
     use ast::CommandPrefixOrSuffixItem as I;
     match item {
         I::Word(w) | I::AssignmentWord(_, w) => substitute(w, active),
+        I::IoRedirect(ast::IoRedirect::HereDocument(_, doc)) if doc.requires_expansion => {
+            doc.doc.value = substitute_heredoc(&doc.doc.value, active);
+        }
         I::IoRedirect(r) => {
             if let Some(w) = expanded_word_mut(r) {
                 substitute(w, active);
@@ -220,14 +223,25 @@ fn brace_expansion_commutes(raw: &str, substituted: &str, active: &[Subst]) -> b
     brace_expand(substituted) == Some(expanded_then_substituted)
 }
 
-/// Replaces each `$var`/`${var}` in one word's text with its bound literal. brush's
-/// piece spans give quote-correct boundaries, so `'$f'` and `$other` are left alone.
+/// Converts loop variables to their values.
 fn substitute_str(value: &str, active: &[Subst]) -> String {
-    let Ok(pieces) = word::parse(value, &ParserOptions::default()) else {
-        return value.to_string();
-    };
+    match word::parse(value, &ParserOptions::default()) {
+        Ok(pieces) => splice(value, &pieces, active),
+        Err(_) => value.to_string(),
+    }
+}
+
+/// Swaps loop variables in a heredoc body for their values.
+fn substitute_heredoc(body: &str, active: &[Subst]) -> String {
+    match word::parse_heredoc(body, &ParserOptions::default()) {
+        Ok(pieces) => splice(body, &pieces, active),
+        Err(_) => body.to_string(),
+    }
+}
+
+fn splice(value: &str, pieces: &[WordPieceWithSource], active: &[Subst]) -> String {
     let mut spans = Vec::new();
-    collect_spans(value, &pieces, active, &mut spans);
+    collect_spans(value, pieces, active, &mut spans);
     if spans.is_empty() {
         return value.to_string();
     }

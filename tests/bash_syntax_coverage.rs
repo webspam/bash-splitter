@@ -55,6 +55,10 @@ use rstest::rstest;
 #[case("! echo $(inner24)", "inner24")]
 // Substitution nested inside a process substitution's body.
 #[case("diff <(echo $(inner25)) x", "inner25")]
+#[case("cat <<EOF\n'$(inner26)'\nEOF\n", "inner26")]
+#[case("cat <<EOF\n'`inner27`'\nEOF\n", "inner27")]
+#[case("cat <<EOF\ndon't $(inner28)\nEOF\n", "inner28")]
+#[case("cat <<-EOF\n\t'$(inner29)'\nEOF\n", "inner29")]
 fn hidden_command_surfaces(#[case] input: &str, #[case] inner: &str) {
     assert!(
         surfaces(input, inner),
