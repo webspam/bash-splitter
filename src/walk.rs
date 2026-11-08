@@ -141,7 +141,8 @@ fn walk_command(command: &ast::Command, piped_from_previous: bool, ctx: &mut Ctx
                     argv,
                     redirects: simple_redirects(simple),
                     in_loop: scope.in_loop,
-                    variables,
+                    variables: variables.names,
+                    dynamic_variables: variables.dynamic,
                 },
                 parent: None,
                 loc: scope.loc,
@@ -199,7 +200,7 @@ fn walk_compound_command(compound: &ast::CompoundCommand, ctx: &mut Ctx, scope: 
                 .into_iter()
                 .flatten()
             {
-                if unroll::mentions_any(&expr.value, scope.active) {
+                if unroll::arithmetic_breaks_unroll(&expr.value, scope.active) {
                     ctx.poisoned = true;
                 }
                 collect_word_subs(&expr.value, None, ctx.subs);
@@ -235,7 +236,7 @@ fn walk_compound_command(compound: &ast::CompoundCommand, ctx: &mut Ctx, scope: 
         // evaluated, so `(( x=$(cmd) ))` runs cmd. It can also read or assign a bound
         // variable without ever becoming a stage.
         C::Arithmetic(a) => {
-            if unroll::mentions_any(&a.expr.value, scope.active) {
+            if unroll::arithmetic_breaks_unroll(&a.expr.value, scope.active) {
                 ctx.poisoned = true;
             }
             collect_word_subs(&a.expr.value, None, ctx.subs)

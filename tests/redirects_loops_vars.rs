@@ -2,7 +2,7 @@
 //! feeds a bash string and asserts on the metadata attached to the split stages.
 
 mod common;
-use common::{in_loop, name, redirects, split, variables};
+use common::{dynamic_variables, in_loop, name, redirects, split, variables};
 use serde_json::Value;
 
 /// The one stage named `n`.
@@ -162,16 +162,36 @@ fn bare_arithmetic_names_are_collected() {
 }
 
 #[test]
-fn dollar_names_in_arithmetic_are_not_doubled() {
+fn parsed_arithmetic_is_not_dynamic() {
+    let cmds = split("echo $((count + 1))");
+    assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn arithmetic_assignment_targets_and_indices_are_collected() {
+    let cmds = split("echo $((a = b + c[i], d++))");
+    assert_eq!(variables(&cmds[0]), ["a", "b", "c", "i", "d"]);
+}
+
+#[test]
+fn expansion_in_arithmetic_flags_variables_dynamic() {
     let cmds = split("echo $(($x + y))");
-    assert_eq!(variables(&cmds[0]), ["x", "y"]);
+    assert_eq!(variables(&cmds[0]), ["x"]);
+    assert!(dynamic_variables(&cmds[0]));
 }
 
 #[test]
 fn bare_subscript_names_are_collected() {
-    // The subscript is an arithmetic context, so `i` is read as a variable.
     let cmds = split("echo ${arr[i]}");
     assert_eq!(variables(&cmds[0]), ["arr", "i"]);
+    assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn expansion_in_subscript_flags_variables_dynamic() {
+    let cmds = split("echo ${arr[$i]}");
+    assert_eq!(variables(&cmds[0]), ["arr", "i"]);
+    assert!(dynamic_variables(&cmds[0]));
 }
 
 #[test]

@@ -11,10 +11,11 @@ use brush_parser::ParserOptions;
 use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
 
+use crate::arithmetic::collect_arithmetic_names;
 use crate::redirect::expanded_word_mut;
 use crate::resolve::{brace_expand, expands_unquoted};
 use crate::simple::prefix_suffix_items;
-use crate::types::ResolvedArgv;
+use crate::types::{ResolvedArgv, Variables};
 use crate::word::is_ident_char;
 
 /// An active loop binding: the variable and the literal it currently expands to.
@@ -62,10 +63,10 @@ pub(crate) fn for_values(f: &ast::ForClauseCommand, unroll: bool) -> Option<Vec<
 pub(crate) fn stage_breaks_unroll(
     simple: &ast::SimpleCommand,
     argv: &ResolvedArgv,
-    variables: &[String],
+    variables: &Variables,
     active: &[Subst],
 ) -> bool {
-    if active.iter().any(|s| variables.iter().any(|v| v == s.var)) {
+    if variables.dynamic || binds_any(&variables.names, active) {
         return true;
     }
     if invokes_unroll_breaking_command(argv) || has_unexpandable_brace_word(simple, active) {
@@ -137,9 +138,23 @@ fn assigns_var(assignment: &ast::Assignment, var: &str) -> bool {
     }
 }
 
-/// Whether arithmetic text reads or assigns a bound variable (`(( f++ ))`). Arithmetic
-/// never becomes a stage, so `stage_breaks_unroll` can't catch it.
-pub(crate) fn mentions_any(text: &str, active: &[Subst]) -> bool {
+fn binds_any(names: &[String], active: &[Subst]) -> bool {
+    active.iter().any(|s| names.iter().any(|n| n == s.var))
+}
+
+/// Whether a stage-less arithmetic expression (`(( f++ ))`) may read or assign a
+/// bound variable. Arithmetic never becomes a stage, so `stage_breaks_unroll` can't
+/// catch it.
+pub(crate) fn arithmetic_breaks_unroll(text: &str, active: &[Subst]) -> bool {
+    if active.is_empty() {
+        return false;
+    }
+    let mut vars = Variables::default();
+    collect_arithmetic_names(text, &mut vars);
+    vars.dynamic || binds_any(&vars.names, active)
+}
+
+fn mentions_any(text: &str, active: &[Subst]) -> bool {
     active.iter().any(|s| mentions_identifier(text, s.var))
 }
 

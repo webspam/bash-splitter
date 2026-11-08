@@ -209,6 +209,18 @@ fn arithmetic_command_on_other_var_still_unrolls() {
 }
 
 #[test]
+fn dynamic_arithmetic_in_stage_blocks_unrolling() {
+    let cmds = split("for f in a b; do echo $(($x + 1)); echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $(($x + 1))", "echo $f"]);
+}
+
+#[test]
+fn dynamic_arithmetic_command_blocks_unrolling() {
+    let cmds = split("for f in a b; do (($x)); echo $f; done");
+    assert_eq!(commands(&cmds), ["echo $f"]);
+}
+
+#[test]
 fn function_definition_blocks_unrolling() {
     // The body runs at call time, so an iteration's value must not be substituted in.
     let cmds = split("for f in a b; do g() { echo $f; }; done");

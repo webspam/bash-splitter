@@ -22,6 +22,22 @@ pub struct Stage {
     /// first-seen order. A single-quoted or quoted-heredoc reference contributes none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) variables: Vec<String>,
+    #[serde(skip_serializing_if = "<&bool as std::ops::Not>::not")]
+    pub(crate) dynamic_variables: bool,
+}
+
+#[derive(Default)]
+pub(crate) struct Variables {
+    pub(crate) names: Vec<String>,
+    pub(crate) dynamic: bool,
+}
+
+impl Variables {
+    pub(crate) fn push(&mut self, name: &str) {
+        if !self.names.iter().any(|n| n == name) {
+            self.names.push(name.to_owned());
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]

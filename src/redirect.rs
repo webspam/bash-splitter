@@ -1,6 +1,6 @@
 use brush_parser::ast;
 
-use crate::types::{HereDoc, Redirect, StageId, Sub};
+use crate::types::{HereDoc, Redirect, StageId, Sub, Variables};
 use crate::word::{collect_brace_expanded_expansions, collect_word_expansions, collect_word_subs};
 
 /// Structures one redirect for output.
@@ -84,7 +84,7 @@ pub(crate) fn expanded_word_mut(redirect: &mut ast::IoRedirect) -> Option<&mut a
 pub(crate) fn collect_redirect_expansions(
     redirect: &ast::IoRedirect,
     parent: Option<StageId>,
-    vars: &mut Vec<String>,
+    vars: &mut Variables,
     subs: &mut Vec<Sub>,
 ) {
     if let Some(w) = expanded_word(redirect) {

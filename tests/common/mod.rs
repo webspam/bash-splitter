@@ -135,6 +135,13 @@ pub fn variables(cmd: &Value) -> Vec<&str> {
     string_array(cmd, "variables")
 }
 
+/// If the command contains dynamic variables.
+pub fn dynamic_variables(cmd: &Value) -> bool {
+    cmd.get("dynamic_variables")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 pub fn piped_from_previous(cmd: &Value) -> bool {
     cmd["piped_from_previous"].as_bool().unwrap_or(false)
 }
