@@ -3,7 +3,7 @@ use brush_parser::ast::{ArithmeticExpr, ArithmeticTarget};
 use crate::types::Variables;
 
 pub(crate) fn collect_arithmetic_names(text: &str, vars: &mut Variables) {
-    match brush_parser::arithmetic::parse(text) {
+    match brush_parser::arithmetic::parse(text.trim_matches([' ', '\t', '\n', '\r'])) {
         Ok(expr) => collect_expr_names(&expr, vars),
         Err(_) => vars.dynamic = true,
     }

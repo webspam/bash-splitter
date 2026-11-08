@@ -7,6 +7,8 @@
 //! discarded and the loop re-walked as a single body. The walk is the only
 //! traversal, so the check can never disagree with it about coverage.
 
+use std::borrow::Cow;
+
 use brush_parser::ParserOptions;
 use brush_parser::ast;
 use brush_parser::word::{self, Parameter, ParameterExpr, WordPiece, WordPieceWithSource};
@@ -150,7 +152,7 @@ pub(crate) fn arithmetic_breaks_unroll(text: &str, active: &[Subst]) -> bool {
         return false;
     }
     let mut vars = Variables::default();
-    collect_arithmetic_names(text, &mut vars);
+    collect_arithmetic_names(&substitute_str(text, active), &mut vars);
     vars.dynamic || binds_any(&vars.names, active)
 }
 
@@ -225,7 +227,7 @@ fn substitute_str(value: &str, active: &[Subst]) -> String {
         return value.to_string();
     };
     let mut spans = Vec::new();
-    collect_spans(&pieces, active, &mut spans);
+    collect_spans(value, &pieces, active, &mut spans);
     if spans.is_empty() {
         return value.to_string();
     }
@@ -239,7 +241,7 @@ fn substitute_str(value: &str, active: &[Subst]) -> String {
         if repl.starts_with(is_ident_char) && ends_with_bare_ref(&out) {
             out.push_str(&value[start..end]);
         } else {
-            out.push_str(repl);
+            out.push_str(&repl);
         }
         pos = end;
     }
@@ -258,9 +260,10 @@ fn ends_with_bare_ref(text: &str) -> bool {
 /// Collects the source spans of bare `$var`/`${var}` references (including inside
 /// double quotes), paired with the literal to splice in.
 fn collect_spans<'a>(
+    source: &str,
     pieces: &[WordPieceWithSource],
     active: &[Subst<'a>],
-    out: &mut Vec<(usize, usize, &'a str)>,
+    out: &mut Vec<(usize, usize, Cow<'a, str>)>,
 ) {
     for piece in pieces {
         match &piece.piece {
@@ -269,12 +272,24 @@ fn collect_spans<'a>(
                 indirect: false,
             }) => {
                 if let Some(subst) = active.iter().find(|s| s.var == name) {
-                    out.push((piece.start_index, piece.end_index, subst.value));
+                    out.push((piece.start_index, piece.end_index, subst.value.into()));
                 }
             }
             WordPiece::DoubleQuotedSequence(inner)
             | WordPiece::GettextDoubleQuotedSequence(inner) => {
-                collect_spans(inner, active, out);
+                collect_spans(source, inner, active, out);
+            }
+            WordPiece::ArithmeticExpression(a) => {
+                let substituted = substitute_str(&a.value, active);
+                if substituted != a.value {
+                    let opener_len = if source.as_bytes()[piece.start_index + 1] == b'[' {
+                        2
+                    } else {
+                        3
+                    };
+                    let body_start = piece.start_index + opener_len;
+                    out.push((body_start, body_start + a.value.len(), substituted.into()));
+                }
             }
             _ => {}
         }

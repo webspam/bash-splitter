@@ -195,6 +195,35 @@ fn expansion_in_subscript_flags_variables_dynamic() {
 }
 
 #[test]
+fn empty_arithmetic_is_not_dynamic() {
+    let cmds = split("echo $(( ))");
+    assert!(variables(&cmds[0]).is_empty());
+    assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn subscript_is_read_as_arithmetic_even_for_associative_arrays() {
+    let cmds = split("echo ${map[key]}");
+    assert_eq!(variables(&cmds[0]), ["map", "key"]);
+    assert!(!dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn quoted_subscript_flags_variables_dynamic() {
+    let cmds = split("echo ${map[\"a b\"]}");
+    assert_eq!(variables(&cmds[0]), ["map"]);
+    assert!(dynamic_variables(&cmds[0]));
+}
+
+#[test]
+fn assigned_value_is_not_tracked_into_arithmetic() {
+    let cmds = split("x=5; echo $(( $x + y ))");
+    let echo = stage(&cmds, "echo");
+    assert_eq!(variables(echo), ["x"]);
+    assert!(dynamic_variables(echo));
+}
+
+#[test]
 fn single_quoted_text_yields_no_variables() {
     let cmds = split("echo '$a'");
     assert!(variables(&cmds[0]).is_empty());
