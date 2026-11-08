@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use brush_parser::{Parser, ParserOptions};
 
+use crate::ParseError;
 use crate::types::{
     Iteration, Loc, LoopId, LoopWalked, NestedItem, NestedLoop, NestedStage, Section, Stage,
     StageId, Sub, Walked,
@@ -16,7 +17,7 @@ pub(crate) fn expand_substitutions(
     mut pending: Vec<Sub>,
     unroll: bool,
     nested: bool,
-) {
+) -> Result<(), ParseError> {
     while !pending.is_empty() {
         let mut next = Vec::new();
         for sub in &pending {
@@ -24,7 +25,7 @@ pub(crate) fn expand_substitutions(
             // substitution sat in; deeper substitutions surface in the next round.
             let start = commands.len();
             let loopstart = loops.len();
-            split_source(&sub.source, commands, loops, &mut next, unroll, nested);
+            split_source(&sub.source, commands, loops, &mut next, unroll, nested)?;
             for walked in &mut commands[start..] {
                 walked.parent = sub.parent;
             }
@@ -34,10 +35,10 @@ pub(crate) fn expand_substitutions(
         }
         pending = next;
     }
+    Ok(())
 }
 
-/// Parses one source string and walks it. A substitution that does not parse on its
-/// own surfaces nothing rather than aborting the whole split.
+/// Parses one substitution source and walks it.
 fn split_source(
     input: &str,
     out: &mut Vec<Walked>,
@@ -45,16 +46,17 @@ fn split_source(
     subs: &mut Vec<Sub>,
     unroll: bool,
     nested: bool,
-) {
+) -> Result<(), ParseError> {
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
-    let Ok(program) = parser.parse_program() else {
-        return;
-    };
+    let program = parser
+        .parse_program()
+        .map_err(|e| ParseError(format!("in substitution `{input}`: {e}")))?;
     // A re-parsed substitution starts a fresh tree; loop bindings do not cross in.
     let mut ctx = Ctx::new(out, subs, loops, unroll, nested);
     for complete_command in &program.complete_commands {
         walk_compound_list(complete_command, &mut ctx, Scope::root());
     }
+    Ok(())
 }
 
 /// Groups a flagged sequence into pipelines: a piped item continues the current
