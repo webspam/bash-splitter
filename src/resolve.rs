@@ -6,7 +6,7 @@ use brush_parser::word::{
     self, BraceExpressionMember, BraceExpressionOrText, WordPiece, WordPieceWithSource,
 };
 
-use crate::brush_workarounds::LINE_CONTINUATION;
+use crate::brush_workarounds::keeps_line_continuation;
 use crate::types::{RawArgv, ResolvedArgv};
 
 const MAX_BRACE_WORDS: usize = 256;
@@ -128,7 +128,7 @@ pub(crate) fn is_literal_heredoc_body(body: &str) -> bool {
         pieces
             .iter()
             // TODO: Remove after https://github.com/reubeno/brush/pull/1421 (59360b5d) is released.
-            .all(|p| matches!(&p.piece, WordPiece::Text(text) if !text.contains(LINE_CONTINUATION)))
+            .all(|p| matches!(&p.piece, WordPiece::Text(text) if !keeps_line_continuation(text)))
     })
 }
 

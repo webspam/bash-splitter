@@ -4,7 +4,9 @@ use brush_parser::{Token, ast, tokenize_str};
 
 use crate::Error;
 
-pub(crate) const LINE_CONTINUATION: &str = "\\\n";
+pub(crate) fn keeps_line_continuation(heredoc_text: &str) -> bool {
+    heredoc_text.contains("\\\n")
+}
 
 pub(crate) fn reject_ansi_c_line_continuation(input: &str) -> Result<(), Error> {
     let Ok(tokens) = tokenize_str(input) else {
