@@ -99,12 +99,24 @@ pub(crate) fn resolve_argv(raw_name: Option<String>, source_args: Vec<SourceWord
     }
 }
 
-/// Resolves a redirect target word. Bash subjects it to parameter, command, and
-/// arithmetic expansion, tilde expansion, and quote removal, but not brace expansion
-/// or word splitting. When every piece is statically known, returns the quote-removed
-/// text; otherwise returns the raw word flagged dynamic.
-pub(crate) fn resolve_redirect_target(raw: &str) -> (String, bool) {
-    match remove_quotes(raw) {
+pub(crate) enum RedirectWord {
+    Static(String),
+    Dynamic,
+    Ambiguous,
+}
+
+pub(crate) fn resolve_redirect_word(raw: &str) -> RedirectWord {
+    let (dynamic, resolved): (Vec<_>, Vec<_>) =
+        resolve_word(raw).into_iter().partition(|w| w.dynamic);
+    match (resolved.as_slice(), dynamic.is_empty()) {
+        ([_, _, ..], _) | ([], true) => RedirectWord::Ambiguous,
+        (_, false) => RedirectWord::Dynamic,
+        ([only], true) => RedirectWord::Static(only.text.clone()),
+    }
+}
+
+pub(crate) fn resolve_here_string(raw: &str) -> (String, bool) {
+    match remove_quotes(raw, starts_here_string_tilde) {
         Some(text) => (text, false),
         None => (raw.to_owned(), true),
     }
@@ -115,7 +127,9 @@ fn resolve_word(raw: &str) -> Vec<Word> {
         Some(expanded) => expanded
             .iter()
             .filter(|w| !w.is_empty())
-            .map(|w| remove_quotes(w).map_or_else(|| Word::dynamic(w), Word::resolved))
+            .map(|w| {
+                remove_quotes(w, expands_unquoted).map_or_else(|| Word::dynamic(w), Word::resolved)
+            })
             .collect(),
         None => vec![Word::dynamic(raw)],
     }
@@ -174,13 +188,13 @@ fn expand_brace_members(members: &[BraceExpressionMember]) -> Option<Vec<String>
     Some(alternatives)
 }
 
-fn remove_quotes(word: &str) -> Option<String> {
+fn remove_quotes(word: &str, expands: fn(&str, &str) -> bool) -> Option<String> {
     let pieces = word::parse(word, &ParserOptions::default()).ok()?;
     let mut out = String::new();
     for piece in &pieces {
         match &piece.piece {
             WordPiece::Text(text) => {
-                if expands_unquoted(&out, text) {
+                if expands(&out, text) {
                     return None;
                 }
                 out.push_str(text);
@@ -196,17 +210,20 @@ fn remove_quotes(word: &str) -> Option<String> {
 }
 
 pub(crate) fn expands_unquoted(preceding: &str, text: &str) -> bool {
-    if text.contains(['*', '?', '[', '(']) {
-        return true;
-    }
+    text.contains(['*', '?', '[', '(']) || starts_tilde_prefix(preceding, text, &['=', ':'])
+}
+
+fn starts_here_string_tilde(preceding: &str, text: &str) -> bool {
+    starts_tilde_prefix(preceding, text, &[':'])
+}
+
+fn starts_tilde_prefix(preceding: &str, text: &str, separators: &[char]) -> bool {
     let mut prev = preceding.chars().next_back();
-    for c in text.chars() {
-        if c == '~' && matches!(prev, None | Some('=' | ':')) {
-            return true;
-        }
+    text.chars().any(|c| {
+        let starts = c == '~' && prev.is_none_or(|p| separators.contains(&p));
         prev = Some(c);
-    }
-    false
+        starts
+    })
 }
 
 fn double_quoted_text(pieces: &[WordPieceWithSource]) -> Option<String> {

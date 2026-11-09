@@ -125,7 +125,7 @@ pub(crate) enum LoopKind {
 }
 
 /// One I/O redirect on a command. `kind` tags the target family: `file`, `fd`,
-/// `process_sub`, `herestring`, `heredoc`.
+/// `fd_or_file`, `ambiguous`, `process_sub`, `herestring`, `heredoc`.
 #[derive(Clone, Serialize)]
 pub(crate) struct Redirect {
     /// The explicit fd, if the source gave one (`2>` -> 2). Absent means bash's default.

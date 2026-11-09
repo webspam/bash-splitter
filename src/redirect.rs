@@ -1,6 +1,6 @@
 use brush_parser::ast;
 
-use crate::resolve::resolve_redirect_target;
+use crate::resolve::{RedirectWord, resolve_here_string, resolve_redirect_word};
 use crate::types::{HereDoc, Redirect, StageId, Sub, Variables};
 use crate::word::{
     collect_brace_expanded_expansions, collect_heredoc_expansions, collect_word_expansions,
@@ -13,19 +13,8 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
     match redirect {
         R::File(fd, op, target) => {
             let (kind, text, dynamic) = match target {
-                T::Filename(w) => {
-                    let (text, dynamic) = resolve_redirect_target(&w.value);
-                    ("file", text, dynamic)
-                }
-                T::Duplicate(w) => {
-                    let (text, dynamic) = resolve_redirect_target(&w.value);
-                    let kind = if dynamic || is_fd_spec(&text) {
-                        "fd"
-                    } else {
-                        "file"
-                    };
-                    (kind, text, dynamic)
-                }
+                T::Filename(w) => file_target(&w.value),
+                T::Duplicate(w) => duplicate_target(*fd, op, &w.value),
                 T::Fd(_) => ("fd", target.to_string(), false),
                 T::ProcessSubstitution(_, _) => ("process_sub", target.to_string(), true),
             };
@@ -39,18 +28,18 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
             }
         }
         R::OutputAndError(target, append) => {
-            let (text, dynamic) = resolve_redirect_target(&target.value);
+            let (kind, text, dynamic) = file_target(&target.value);
             Redirect {
                 fd: None,
                 op: if *append { "&>>" } else { "&>" }.to_string(),
-                kind: "file",
+                kind,
                 target: Some(text),
                 heredoc: None,
                 dynamic,
             }
         }
         R::HereString(fd, word) => {
-            let (text, dynamic) = resolve_redirect_target(&word.value);
+            let (text, dynamic) = resolve_here_string(&word.value);
             Redirect {
                 fd: *fd,
                 op: "<<<".to_string(),
@@ -75,10 +64,48 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
     }
 }
 
-/// If a redirect `>&target` is actually a descriptor.
-fn is_fd_spec(text: &str) -> bool {
-    let digits = text.strip_suffix('-').unwrap_or(text);
-    text == "-" || (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+type Target = (&'static str, String, bool);
+
+fn file_target(raw: &str) -> Target {
+    match resolve_redirect_word(raw) {
+        RedirectWord::Static(text) => ("file", text, false),
+        RedirectWord::Dynamic => ("file", raw.to_owned(), true),
+        RedirectWord::Ambiguous => ("ambiguous", raw.to_owned(), false),
+    }
+}
+
+fn duplicate_target(fd: Option<i32>, op: &ast::IoFileRedirectKind, raw: &str) -> Target {
+    if raw == CLOSE {
+        return ("fd", CLOSE.to_owned(), false);
+    }
+    if let Some(source) = raw.strip_suffix('-') {
+        return move_target(source, raw);
+    }
+    let duplicates_stdout =
+        matches!(op, ast::IoFileRedirectKind::DuplicateOutput) && fd.unwrap_or(1) == 1;
+    match resolve_redirect_word(raw) {
+        RedirectWord::Static(text) if text == CLOSE || is_fd_number(&text) => ("fd", text, false),
+        RedirectWord::Static(text) if duplicates_stdout => ("file", text, false),
+        RedirectWord::Dynamic if duplicates_stdout => ("fd_or_file", raw.to_owned(), true),
+        RedirectWord::Dynamic => ("fd", raw.to_owned(), true),
+        RedirectWord::Static(_) | RedirectWord::Ambiguous => ("ambiguous", raw.to_owned(), false),
+    }
+}
+
+fn move_target(source: &str, raw: &str) -> Target {
+    match resolve_redirect_word(source) {
+        RedirectWord::Static(text) if is_fd_number(&text) => ("fd", format!("{text}-"), false),
+        RedirectWord::Static(text) if text == CLOSE => ("fd", CLOSE.to_owned(), false),
+        RedirectWord::Ambiguous => ("fd", CLOSE.to_owned(), false),
+        RedirectWord::Dynamic => ("fd", raw.to_owned(), true),
+        RedirectWord::Static(_) => ("ambiguous", raw.to_owned(), false),
+    }
+}
+
+const CLOSE: &str = "-";
+
+fn is_fd_number(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// A heredoc body is dynamic when its delimiter is unquoted (so it expands) and the
