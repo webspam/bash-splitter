@@ -11,6 +11,7 @@ use crate::types::{RawArgv, ResolvedArgv};
 const MAX_BRACE_WORDS: usize = 256;
 const MAX_BRACE_OPENS: usize = 10;
 const MAX_SEQUENCE_DIGITS: usize = 18;
+const LINE_CONTINUATION: &str = "\\\n";
 
 struct Word {
     text: String,
@@ -120,6 +121,15 @@ pub(crate) fn resolve_here_string(raw: &str) -> (String, bool) {
         Some(text) => (text, false),
         None => (raw.to_owned(), true),
     }
+}
+
+pub(crate) fn is_literal_heredoc_body(body: &str) -> bool {
+    word::parse_heredoc(body, &ParserOptions::default()).is_ok_and(|pieces| {
+        pieces
+            .iter()
+            // TODO: Remove after https://github.com/reubeno/brush/pull/1421 (59360b5d) is released.
+            .all(|p| matches!(&p.piece, WordPiece::Text(text) if !text.contains(LINE_CONTINUATION)))
+    })
 }
 
 fn resolve_word(raw: &str) -> Vec<Word> {

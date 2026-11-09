@@ -1,6 +1,8 @@
 use brush_parser::ast;
 
-use crate::resolve::{RedirectWord, resolve_here_string, resolve_redirect_word};
+use crate::resolve::{
+    RedirectWord, is_literal_heredoc_body, resolve_here_string, resolve_redirect_word,
+};
 use crate::types::{HereDoc, Redirect, StageId, Sub, Variables};
 use crate::word::{
     collect_brace_expanded_expansions, collect_heredoc_expansions, collect_word_expansions,
@@ -59,7 +61,7 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
                 expands: doc.requires_expansion,
                 body: doc.doc.value.clone(),
             }),
-            dynamic: heredoc_is_dynamic(doc),
+            dynamic: doc.requires_expansion && !is_literal_heredoc_body(&doc.doc.value),
         },
     }
 }
@@ -106,18 +108,6 @@ const CLOSE: &str = "-";
 
 fn is_fd_number(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// A heredoc body is dynamic when its delimiter is unquoted (so it expands) and the
-/// body actually references a parameter or command, or cannot be parsed.
-fn heredoc_is_dynamic(doc: &ast::IoHereDocument) -> bool {
-    if !doc.requires_expansion {
-        return false;
-    }
-    let mut vars = Variables::default();
-    let mut subs = Vec::new();
-    collect_heredoc_expansions(&doc.doc.value, None, &mut vars, &mut subs);
-    vars.dynamic || !vars.names.is_empty() || !subs.is_empty()
 }
 
 /// The one word a redirect expands: its target, or an unquoted heredoc body.

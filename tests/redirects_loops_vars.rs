@@ -331,6 +331,21 @@ fn expanding_heredoc_with_variable_is_dynamic() {
 }
 
 #[test]
+fn expanding_heredoc_with_escape_or_arithmetic_is_dynamic() {
+    for body in [
+        "echo \\$(id)",
+        "a\\\\b",
+        "x \\`y\\`",
+        "ab\\\ncd",
+        "$((1+2))",
+    ] {
+        let cmds = split(&format!("cat <<EOF\n{body}\nEOF\n"));
+        let r = &redirects(&cmds[0])[0];
+        assert!(is_dynamic(r), "{body}");
+    }
+}
+
+#[test]
 fn expanding_heredoc_without_refs_is_static() {
     let cmds = split("cat <<EOF\nhello world\nEOF\n");
     let r = &redirects(&cmds[0])[0];

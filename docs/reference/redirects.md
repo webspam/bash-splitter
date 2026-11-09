@@ -49,7 +49,7 @@ A non-numeric duplication target is a file only on stdout:
 - Duplication onto an expansion: `>&$fd`, `2>&$fd`
 - Here-string tilde at the start or after `:`: `<<< ~`, `<<< a:~` (here-strings are never brace-expanded or globbed)
 - Process substitution (always): `> >(cmd)`
-- Heredoc with an unquoted delimiter whose body references a parameter or command
+- An unquoted heredoc containing expansions or escapes
 
 ## `heredoc` object
 
