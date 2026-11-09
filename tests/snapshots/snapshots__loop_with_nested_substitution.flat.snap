@@ -19,7 +19,8 @@ expression: "split(input, true).expect(\"parse\")"
         {
           "op": ">",
           "kind": "file",
-          "target": "\"out/$f\""
+          "target": "\"out/$f\"",
+          "dynamic": true
         }
       ],
       "in_loop": true,

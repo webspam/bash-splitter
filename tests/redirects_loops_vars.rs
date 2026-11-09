@@ -2,7 +2,7 @@
 //! feeds a bash string and asserts on the metadata attached to the split stages.
 
 mod common;
-use common::{dynamic_variables, in_loop, name, redirects, split, variables};
+use common::{dynamic_variables, in_loop, is_dynamic, name, redirects, split, variables};
 use serde_json::Value;
 
 /// The one stage named `n`.
@@ -63,6 +63,310 @@ fn process_substitution_target_is_tagged_and_surfaces() {
     assert_eq!(field(r, "kind"), Some("process_sub"));
     // The inner command still surfaces as its own pipeline.
     assert!(cmds.iter().any(|c| name(c) == Some("tee")));
+}
+
+// ---- dynamic redirect targets ----
+
+#[test]
+fn static_file_target_is_not_dynamic() {
+    let cmds = split("cmd > out.txt");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+    assert_eq!(field(r, "target"), Some("out.txt"));
+}
+
+#[test]
+fn quoted_file_target_resolves_and_is_static() {
+    let cmds = split("cmd > \"out dir/log.txt\"");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+    assert_eq!(field(r, "target"), Some("out dir/log.txt"));
+}
+
+#[test]
+fn parameter_file_target_is_dynamic() {
+    let cmds = split("cmd > $out");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+    assert_eq!(field(r, "target"), Some("$out"));
+}
+
+#[test]
+fn command_substitution_target_is_dynamic() {
+    let cmds = split("cmd > $(date).log");
+    let r = &redirects(stage(&cmds, "cmd"))[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn glob_target_is_dynamic() {
+    let cmds = split("cmd > logs/*.txt");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn tilde_target_is_dynamic() {
+    let cmds = split("cmd > ~/out.txt");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn quoted_tilde_target_is_static() {
+    let cmds = split("cmd > \"~/out.txt\"");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r), "quotes suppress tilde expansion");
+    assert_eq!(field(r, "target"), Some("~/out.txt"));
+}
+
+#[test]
+fn fd_duplication_is_static() {
+    let cmds = split("cmd 2>&1");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn stdout_duplication_to_variable_may_be_fd_or_file() {
+    for input in ["cmd >&$fd", "cmd 1>&$fd"] {
+        let cmds = split(input);
+        let r = &redirects(&cmds[0])[0];
+        assert_eq!(field(r, "kind"), Some("fd_or_file"), "{input}");
+        assert_eq!(field(r, "target"), Some("$fd"), "{input}");
+        assert!(is_dynamic(r), "{input}");
+    }
+}
+
+#[test]
+fn non_stdout_duplication_to_variable_is_dynamic_fd() {
+    for input in ["cmd 2>&$fd", "cmd <&$fd", "cmd >&$fd-"] {
+        let cmds = split(input);
+        let r = &redirects(&cmds[0])[0];
+        assert_eq!(field(r, "kind"), Some("fd"), "{input}");
+        assert!(is_dynamic(r), "{input}");
+    }
+}
+
+#[test]
+fn explicit_stdout_duplication_to_word_is_a_file() {
+    let cmds = split("cmd 1>&fail");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("file"));
+    assert_eq!(field(r, "target"), Some("fail"));
+}
+
+#[test]
+fn non_stdout_duplication_to_word_is_ambiguous() {
+    for input in ["cmd 2>&fail", "cmd 3>&fail", "cmd <&fail", "cmd >&fail-"] {
+        let cmds = split(input);
+        let r = &redirects(&cmds[0])[0];
+        assert_eq!(field(r, "kind"), Some("ambiguous"), "{input}");
+        assert!(!is_dynamic(r), "{input}");
+    }
+}
+
+#[test]
+fn quoted_dash_suffix_is_a_filename_not_a_move() {
+    let cmds = split("cmd >&\"1-\"");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("file"));
+    assert_eq!(field(r, "target"), Some("1-"));
+}
+
+#[test]
+fn quoted_digits_and_dash_are_descriptors() {
+    for (input, target) in [
+        ("cmd >&\"1\"", "1"),
+        ("cmd >&\"-\"", "-"),
+        ("cmd >&{1,}", "1"),
+    ] {
+        let cmds = split(input);
+        let r = &redirects(&cmds[0])[0];
+        assert_eq!(field(r, "kind"), Some("fd"), "{input}");
+        assert_eq!(field(r, "target"), Some(target), "{input}");
+    }
+}
+
+#[test]
+fn brace_expansion_to_one_word_resolves() {
+    for (input, kind) in [
+        ("cmd > {a,}", "file"),
+        ("cmd &> {a,}", "file"),
+        ("cmd >&{a,}", "file"),
+    ] {
+        let cmds = split(input);
+        let r = &redirects(&cmds[0])[0];
+        assert_eq!(field(r, "kind"), Some(kind), "{input}");
+        assert_eq!(field(r, "target"), Some("a"), "{input}");
+        assert!(!is_dynamic(r), "{input}");
+    }
+}
+
+#[test]
+fn brace_expansion_to_many_words_is_ambiguous() {
+    for input in [
+        "cmd > {a,b}",
+        "cmd > x{a,b}y",
+        "cmd > {a,\"\"}",
+        "cmd &> {a,b}",
+        "cmd >&{a,b}",
+        "cmd > {$x,a,b}",
+    ] {
+        let cmds = split(input);
+        let r = &redirects(&cmds[0])[0];
+        assert_eq!(field(r, "kind"), Some("ambiguous"), "{input}");
+        assert!(!is_dynamic(r), "{input}");
+    }
+}
+
+#[test]
+#[should_panic(expected = "known limitation: disabled brace expansion is not tracked")]
+fn brace_target_after_disabling_brace_expansion_is_not_ambiguous() {
+    for input in [
+        "set +B; echo x > /etc/profile.d/x{a,b}.sh",
+        "set -o nobraceexpand; echo x > /etc/profile.d/x{a,b}.sh",
+    ] {
+        let cmds = split(input);
+        let r = &redirects(stage(&cmds, "echo"))[0];
+        assert_ne!(
+            field(r, "kind"),
+            Some("ambiguous"),
+            "known limitation: disabled brace expansion is not tracked: {input}"
+        );
+    }
+}
+
+#[test]
+fn move_onto_many_words_closes_the_descriptor() {
+    let cmds = split("cmd >&{a,b}-");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("fd"));
+    assert_eq!(field(r, "target"), Some("-"));
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn brace_expansion_with_one_static_word_and_a_variable_is_dynamic() {
+    let cmds = split("cmd > {$x,a}");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("file"));
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn here_string_is_not_brace_or_glob_expanded() {
+    for (input, target) in [
+        ("cat <<< {a,b}", "{a,b}"),
+        ("cat <<< g*", "g*"),
+        ("cat <<< a=~", "a=~"),
+    ] {
+        let cmds = split(input);
+        let r = &redirects(&cmds[0])[0];
+        assert_eq!(field(r, "target"), Some(target), "{input}");
+        assert!(!is_dynamic(r), "{input}");
+    }
+}
+
+#[test]
+fn here_string_tilde_at_start_or_after_colon_is_dynamic() {
+    for input in ["cat <<< ~", "cat <<< a:~"] {
+        let cmds = split(input);
+        let r = &redirects(&cmds[0])[0];
+        assert!(is_dynamic(r), "{input}");
+    }
+}
+
+#[test]
+fn file_target_tilde_after_equals_is_dynamic() {
+    let cmds = split("cmd > a=~");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn fd_word_filename_is_a_static_file_not_a_descriptor() {
+    let cmds = split("cmd >&fail");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "op"), Some(">&"));
+    assert_eq!(field(r, "kind"), Some("file"));
+    assert_eq!(field(r, "target"), Some("fail"));
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn fd_close_dash_is_a_descriptor() {
+    let cmds = split("cmd 2>&-");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("fd"));
+    assert_eq!(field(r, "target"), Some("-"));
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn fd_move_is_a_descriptor() {
+    let cmds = split("cmd 3>&1-");
+    let r = &redirects(&cmds[0])[0];
+    assert_eq!(field(r, "kind"), Some("fd"));
+    assert_eq!(field(r, "target"), Some("1-"));
+}
+
+#[test]
+fn process_substitution_target_is_dynamic() {
+    let cmds = split("cmd > >(tee log)");
+    let r = &redirects(stage(&cmds, "cmd"))[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn here_string_with_variable_is_dynamic() {
+    let cmds = split("cat <<< \"$foo\"");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn literal_here_string_is_static() {
+    let cmds = split("cat <<< hello");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+    assert_eq!(field(r, "target"), Some("hello"));
+}
+
+#[test]
+fn expanding_heredoc_with_variable_is_dynamic() {
+    let cmds = split("cat <<EOF\nhello $name\nEOF\n");
+    let r = &redirects(&cmds[0])[0];
+    assert!(is_dynamic(r));
+}
+
+#[test]
+fn expanding_heredoc_with_escape_or_arithmetic_is_dynamic() {
+    for body in [
+        "echo \\$(id)",
+        "a\\\\b",
+        "x \\`y\\`",
+        "ab\\\ncd",
+        "$((1+2))",
+    ] {
+        let cmds = split(&format!("cat <<EOF\n{body}\nEOF\n"));
+        let r = &redirects(&cmds[0])[0];
+        assert!(is_dynamic(r), "{body}");
+    }
+}
+
+#[test]
+fn expanding_heredoc_without_refs_is_static() {
+    let cmds = split("cat <<EOF\nhello world\nEOF\n");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
+}
+
+#[test]
+fn quoted_heredoc_is_static() {
+    let cmds = split("cat <<'EOF'\nliteral $x\nEOF\n");
+    let r = &redirects(&cmds[0])[0];
+    assert!(!is_dynamic(r));
 }
 
 // ---- heredocs ----

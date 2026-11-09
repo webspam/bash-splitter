@@ -175,6 +175,13 @@ pub fn dynamic_variables(cmd: &Value) -> bool {
         .unwrap_or(false)
 }
 
+pub fn is_dynamic(redirect: &Value) -> bool {
+    redirect
+        .get("dynamic")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 pub fn piped_from_previous(cmd: &Value) -> bool {
     cmd["piped_from_previous"].as_bool().unwrap_or(false)
 }

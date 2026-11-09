@@ -6,6 +6,7 @@ use brush_parser::word::{
     self, BraceExpressionMember, BraceExpressionOrText, WordPiece, WordPieceWithSource,
 };
 
+use crate::brush_workarounds::keeps_line_continuation;
 use crate::types::{RawArgv, ResolvedArgv};
 
 const MAX_BRACE_WORDS: usize = 256;
@@ -99,12 +100,46 @@ pub(crate) fn resolve_argv(raw_name: Option<String>, source_args: Vec<SourceWord
     }
 }
 
+pub(crate) enum RedirectWord {
+    Static(String),
+    Dynamic,
+    Ambiguous,
+}
+
+pub(crate) fn resolve_redirect_word(raw: &str) -> RedirectWord {
+    let (dynamic, resolved): (Vec<_>, Vec<_>) =
+        resolve_word(raw).into_iter().partition(|w| w.dynamic);
+    match (resolved.as_slice(), dynamic.is_empty()) {
+        ([_, _, ..], _) | ([], true) => RedirectWord::Ambiguous,
+        (_, false) => RedirectWord::Dynamic,
+        ([only], true) => RedirectWord::Static(only.text.clone()),
+    }
+}
+
+pub(crate) fn resolve_here_string(raw: &str) -> (String, bool) {
+    match remove_quotes(raw, starts_here_string_tilde) {
+        Some(text) => (text, false),
+        None => (raw.to_owned(), true),
+    }
+}
+
+pub(crate) fn is_literal_heredoc_body(body: &str) -> bool {
+    word::parse_heredoc(body, &ParserOptions::default()).is_ok_and(|pieces| {
+        pieces
+            .iter()
+            // TODO: Remove after https://github.com/reubeno/brush/pull/1421 (59360b5d) is released.
+            .all(|p| matches!(&p.piece, WordPiece::Text(text) if !keeps_line_continuation(text)))
+    })
+}
+
 fn resolve_word(raw: &str) -> Vec<Word> {
     match brace_expand(raw) {
         Some(expanded) => expanded
             .iter()
             .filter(|w| !w.is_empty())
-            .map(|w| remove_quotes(w).map_or_else(|| Word::dynamic(w), Word::resolved))
+            .map(|w| {
+                remove_quotes(w, expands_unquoted).map_or_else(|| Word::dynamic(w), Word::resolved)
+            })
             .collect(),
         None => vec![Word::dynamic(raw)],
     }
@@ -163,13 +198,13 @@ fn expand_brace_members(members: &[BraceExpressionMember]) -> Option<Vec<String>
     Some(alternatives)
 }
 
-fn remove_quotes(word: &str) -> Option<String> {
+fn remove_quotes(word: &str, expands: fn(&str, &str) -> bool) -> Option<String> {
     let pieces = word::parse(word, &ParserOptions::default()).ok()?;
     let mut out = String::new();
     for piece in &pieces {
         match &piece.piece {
             WordPiece::Text(text) => {
-                if expands_unquoted(&out, text) {
+                if expands(&out, text) {
                     return None;
                 }
                 out.push_str(text);
@@ -185,17 +220,20 @@ fn remove_quotes(word: &str) -> Option<String> {
 }
 
 pub(crate) fn expands_unquoted(preceding: &str, text: &str) -> bool {
-    if text.contains(['*', '?', '[', '(']) {
-        return true;
-    }
+    text.contains(['*', '?', '[', '(']) || starts_tilde_prefix(preceding, text, &['=', ':'])
+}
+
+fn starts_here_string_tilde(preceding: &str, text: &str) -> bool {
+    starts_tilde_prefix(preceding, text, &[':'])
+}
+
+fn starts_tilde_prefix(preceding: &str, text: &str, separators: &[char]) -> bool {
     let mut prev = preceding.chars().next_back();
-    for c in text.chars() {
-        if c == '~' && matches!(prev, None | Some('=' | ':')) {
-            return true;
-        }
+    text.chars().any(|c| {
+        let starts = c == '~' && prev.is_none_or(|p| separators.contains(&p));
         prev = Some(c);
-    }
-    false
+        starts
+    })
 }
 
 fn double_quoted_text(pieces: &[WordPieceWithSource]) -> Option<String> {
