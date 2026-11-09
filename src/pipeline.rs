@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use brush_parser::{Parser, ParserOptions};
 
 use crate::Error;
-use crate::brush_workarounds::reject_ansi_c_line_continuation;
 use crate::types::{
     Iteration, Loc, LoopId, LoopWalked, NestedItem, NestedLoop, NestedStage, Section, Stage,
     StageId, Sub, Walked,
@@ -48,7 +47,6 @@ fn split_source(
     unroll: bool,
     nested: bool,
 ) -> Result<(), Error> {
-    reject_ansi_c_line_continuation(input)?;
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
     let program = parser
         .parse_program()

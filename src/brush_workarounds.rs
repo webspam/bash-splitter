@@ -10,19 +10,8 @@ pub(crate) fn reject_ansi_c_line_continuation(input: &str) -> Result<(), Error> 
     let Ok(tokens) = tokenize_str(input) else {
         return Ok(());
     };
-    let byte_offsets: Vec<usize> = input
-        .char_indices()
-        .map(|(offset, _)| offset)
-        .chain([input.len()])
-        .collect();
-    let source_of =
-        |start: usize, end: usize| Some(&input[*byte_offsets.get(start)?..*byte_offsets.get(end)?]);
     let affected = tokens.iter().any(|token| match token {
-        Token::Word(text, span) => {
-            text.contains("$'")
-                && source_of(span.start.index, span.end.index)
-                    .is_some_and(|source| source.contains(LINE_CONTINUATION))
-        }
+        Token::Word(text, span) => text.contains("$'") && text.chars().count() < span.length(),
         Token::Operator(..) => false,
     });
     if affected {
@@ -41,14 +30,6 @@ pub(crate) fn splits_heredoc_end_tag(redirect: &ast::IoRedirect) -> bool {
     if !doc.requires_expansion {
         return false;
     }
-    let is_end_tag = |line: &str| {
-        let line = if doc.remove_tabs {
-            line.trim_start_matches('\t')
-        } else {
-            line
-        };
-        line == doc.here_end.value
-    };
     let mut line = String::new();
     let mut continued = false;
     let mut chars = doc.doc.value.chars();
@@ -61,7 +42,7 @@ pub(crate) fn splits_heredoc_end_tag(redirect: &ast::IoRedirect) -> bool {
                 None => line.push(c),
             },
             '\n' => {
-                if is_end_tag(&line) {
+                if line == doc.here_end.value {
                     return true;
                 }
                 line.clear();
