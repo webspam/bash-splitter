@@ -1,10 +1,13 @@
 use brush_parser::ast;
 
 use crate::Error;
+use crate::brush_workarounds::splits_heredoc_end_tag;
 use crate::extended_test::collect_extended_test_subs;
 use crate::redirect::collect_redirect_list_subs;
 use crate::resolve::resolve_argv;
-use crate::simple::{collect_expansions, prefix_assignments, simple_redirects, suffix_args};
+use crate::simple::{
+    collect_expansions, prefix_assignments, prefix_suffix_items, simple_redirects, suffix_args,
+};
 use crate::types::{Loc, LoopId, LoopKind, LoopWalked, Section, Stage, StageId, Sub, Walked};
 use crate::unroll::{self, Subst};
 use crate::word::collect_word_subs;
@@ -53,6 +56,15 @@ impl<'a> Ctx<'a> {
     fn note_redirects(&mut self, redirects: Option<&ast::RedirectList>) {
         if redirects.is_some_and(|r| !r.0.is_empty()) {
             self.rejection = Some("redirect on a compound command, [[ ]], or function definition");
+        }
+    }
+
+    fn note_heredocs(&mut self, simple: &ast::SimpleCommand) {
+        let splits_end_tag = prefix_suffix_items(simple).any(|item| {
+            matches!(item, ast::CommandPrefixOrSuffixItem::IoRedirect(r) if splits_heredoc_end_tag(r))
+        });
+        if splits_end_tag {
+            self.rejection = Some("heredoc end tag joined by a line continuation");
         }
     }
 
@@ -137,6 +149,7 @@ fn walk_command(command: &ast::Command, piped_from_previous: bool, ctx: &mut Ctx
                 substituted = unroll::substitute_simple(simple, scope.active);
                 &substituted
             };
+            ctx.note_heredocs(simple);
             let id = StageId(ctx.out.len());
             let variables = collect_expansions(simple, id, ctx.subs);
             let argv = resolve_argv(

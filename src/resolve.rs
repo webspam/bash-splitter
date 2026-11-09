@@ -6,12 +6,12 @@ use brush_parser::word::{
     self, BraceExpressionMember, BraceExpressionOrText, WordPiece, WordPieceWithSource,
 };
 
+use crate::brush_workarounds::LINE_CONTINUATION;
 use crate::types::{RawArgv, ResolvedArgv};
 
 const MAX_BRACE_WORDS: usize = 256;
 const MAX_BRACE_OPENS: usize = 10;
 const MAX_SEQUENCE_DIGITS: usize = 18;
-const LINE_CONTINUATION: &str = "\\\n";
 
 struct Word {
     text: String,

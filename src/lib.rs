@@ -4,6 +4,7 @@
 //! represents each loop as an object holding its contents.
 
 mod arithmetic;
+mod brush_workarounds;
 mod extended_test;
 mod params;
 mod pipeline;
@@ -73,6 +74,7 @@ fn walk_and_unroll(
     unroll: bool,
     nested: bool,
 ) -> Result<(Vec<Walked>, Vec<LoopWalked>), Error> {
+    brush_workarounds::reject_ansi_c_line_continuation(input)?;
     let mut parser = Parser::new(input.as_bytes(), &ParserOptions::default());
     let program = parser
         .parse_program()
