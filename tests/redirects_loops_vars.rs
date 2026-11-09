@@ -228,6 +228,23 @@ fn brace_expansion_to_many_words_is_ambiguous() {
 }
 
 #[test]
+#[should_panic(expected = "known limitation: disabled brace expansion is not tracked")]
+fn brace_target_after_disabling_brace_expansion_is_not_ambiguous() {
+    for input in [
+        "set +B; echo x > /etc/profile.d/x{a,b}.sh",
+        "set -o nobraceexpand; echo x > /etc/profile.d/x{a,b}.sh",
+    ] {
+        let cmds = split(input);
+        let r = &redirects(stage(&cmds, "echo"))[0];
+        assert_ne!(
+            field(r, "kind"),
+            Some("ambiguous"),
+            "known limitation: disabled brace expansion is not tracked: {input}"
+        );
+    }
+}
+
+#[test]
 fn move_onto_many_words_closes_the_descriptor() {
     let cmds = split("cmd >&{a,b}-");
     let r = &redirects(&cmds[0])[0];

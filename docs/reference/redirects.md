@@ -35,6 +35,16 @@ A non-numeric duplication target is a file only on stdout:
 - `2>&word`, `3>&word`, `<&word`, `>&word-`: ambiguous
 - `>&"1-"`: file `1-` (only an unquoted trailing `-` is a move)
 
+::: warning Known issue: `set +B`
+Brace expansion is assumed to be on. `set +B` / `set -o nobraceexpand` is not tracked, so a brace target after it is only reported as `ambiguous`:
+
+```bash
+set +B; echo x > /etc/profile.d/x{a,b}.sh
+```
+
+Bash creates `/etc/profile.d/x{a,b}.sh`. Do not treat `ambiguous` as proof that a command is inert when the input can change shell options.
+:::
+
 ## `dynamic`
 
 | Source           | `target`     | `dynamic` | Meaning                                                         |
