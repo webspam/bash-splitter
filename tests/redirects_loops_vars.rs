@@ -2,7 +2,7 @@
 //! feeds a bash string and asserts on the metadata attached to the split stages.
 
 mod common;
-use common::{dynamic_variables, in_loop, name, redirects, split, variables};
+use common::{dynamic_variables, in_loop, is_dynamic, name, redirects, split, variables};
 use serde_json::Value;
 
 /// The one stage named `n`.
@@ -14,13 +14,6 @@ fn stage<'a>(cmds: &'a [Value], n: &str) -> &'a Value {
 
 fn field<'a>(redirect: &'a Value, key: &str) -> Option<&'a str> {
     redirect.get(key).and_then(Value::as_str)
-}
-
-fn is_dynamic(redirect: &Value) -> bool {
-    redirect
-        .get("dynamic")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
 }
 
 // ---- redirects ----

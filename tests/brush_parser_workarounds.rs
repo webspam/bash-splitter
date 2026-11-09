@@ -1,5 +1,5 @@
 mod common;
-use common::{args, name, redirects, split, split_unsupported};
+use common::{args, is_dynamic, name, redirects, split, split_unsupported};
 
 #[test]
 fn heredoc_end_tag_split_by_line_continuation_is_unsupported() {
@@ -87,10 +87,7 @@ fn unquoted_heredoc_line_continuation_is_supported_and_dynamic() {
         .find(|c| name(c) == Some("cat"))
         .expect("cat surfaces");
     let heredoc = redirects(cat).first().expect("heredoc redirect");
-    assert_eq!(
-        heredoc.get("dynamic").and_then(serde_json::Value::as_bool),
-        Some(true)
-    );
+    assert!(is_dynamic(heredoc));
 }
 
 #[test]
