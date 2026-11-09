@@ -124,8 +124,7 @@ pub(crate) enum LoopKind {
     Until,
 }
 
-/// One I/O redirect on a command. `kind` tags the target family: `file`, `fd`,
-/// `fd_or_file`, `ambiguous`, `process_sub`, `herestring`, `heredoc`.
+/// One I/O redirect on a command.
 #[derive(Clone, Serialize)]
 pub(crate) struct Redirect {
     /// The explicit fd, if the source gave one (`2>` -> 2). Absent means bash's default.
@@ -133,8 +132,7 @@ pub(crate) struct Redirect {
     pub(crate) fd: Option<i32>,
     /// The redirect operator as written (`>`, `>>`, `<`, `<<`, `<<<`, `>&`, `&>`, ...).
     pub(crate) op: String,
-    /// Target family; see the struct doc.
-    pub(crate) kind: &'static str,
+    pub(crate) kind: RedirectKind,
     /// The target text (filename, fd number, or rendered process substitution). Absent
     /// for a heredoc, whose payload lives in `heredoc`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -147,6 +145,18 @@ pub(crate) struct Redirect {
     /// are only known at runtime. A process substitution is always dynamic.
     #[serde(skip_serializing_if = "<&bool as std::ops::Not>::not")]
     pub(crate) dynamic: bool,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RedirectKind {
+    File,
+    Fd,
+    FdOrFile,
+    Ambiguous,
+    ProcessSub,
+    Herestring,
+    Heredoc,
 }
 
 /// A heredoc body and how bash treats it.

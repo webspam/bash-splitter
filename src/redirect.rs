@@ -3,7 +3,7 @@ use brush_parser::ast;
 use crate::resolve::{
     RedirectWord, is_literal_heredoc_body, resolve_here_string, resolve_redirect_word,
 };
-use crate::types::{HereDoc, Redirect, StageId, Sub, Variables};
+use crate::types::{HereDoc, Redirect, RedirectKind, StageId, Sub, Variables};
 use crate::word::{
     collect_brace_expanded_expansions, collect_heredoc_expansions, collect_word_expansions,
 };
@@ -17,8 +17,10 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
             let (kind, text, dynamic) = match target {
                 T::Filename(w) => file_target(&w.value),
                 T::Duplicate(w) => duplicate_target(*fd, op, &w.value),
-                T::Fd(_) => ("fd", target.to_string(), false),
-                T::ProcessSubstitution(_, _) => ("process_sub", target.to_string(), true),
+                T::Fd(_) => (RedirectKind::Fd, target.to_string(), false),
+                T::ProcessSubstitution(_, _) => {
+                    (RedirectKind::ProcessSub, target.to_string(), true)
+                }
             };
             Redirect {
                 fd: *fd,
@@ -45,7 +47,7 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
             Redirect {
                 fd: *fd,
                 op: "<<<".to_string(),
-                kind: "herestring",
+                kind: RedirectKind::Herestring,
                 target: Some(text),
                 heredoc: None,
                 dynamic,
@@ -54,7 +56,7 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
         R::HereDocument(fd, doc) => Redirect {
             fd: *fd,
             op: if doc.remove_tabs { "<<-" } else { "<<" }.to_string(),
-            kind: "heredoc",
+            kind: RedirectKind::Heredoc,
             target: None,
             heredoc: Some(HereDoc {
                 delimiter: doc.here_end.value.clone(),
@@ -66,19 +68,19 @@ pub(crate) fn redirect_of(redirect: &ast::IoRedirect) -> Redirect {
     }
 }
 
-type Target = (&'static str, String, bool);
+type Target = (RedirectKind, String, bool);
 
 fn file_target(raw: &str) -> Target {
     match resolve_redirect_word(raw) {
-        RedirectWord::Static(text) => ("file", text, false),
-        RedirectWord::Dynamic => ("file", raw.to_owned(), true),
-        RedirectWord::Ambiguous => ("ambiguous", raw.to_owned(), false),
+        RedirectWord::Static(text) => (RedirectKind::File, text, false),
+        RedirectWord::Dynamic => (RedirectKind::File, raw.to_owned(), true),
+        RedirectWord::Ambiguous => (RedirectKind::Ambiguous, raw.to_owned(), false),
     }
 }
 
 fn duplicate_target(fd: Option<i32>, op: &ast::IoFileRedirectKind, raw: &str) -> Target {
     if raw == CLOSE {
-        return ("fd", CLOSE.to_owned(), false);
+        return (RedirectKind::Fd, CLOSE.to_owned(), false);
     }
     if let Some(source) = raw.strip_suffix('-') {
         return move_target(source, raw);
@@ -86,21 +88,29 @@ fn duplicate_target(fd: Option<i32>, op: &ast::IoFileRedirectKind, raw: &str) ->
     let duplicates_stdout =
         matches!(op, ast::IoFileRedirectKind::DuplicateOutput) && fd.unwrap_or(1) == 1;
     match resolve_redirect_word(raw) {
-        RedirectWord::Static(text) if text == CLOSE || is_fd_number(&text) => ("fd", text, false),
-        RedirectWord::Static(text) if duplicates_stdout => ("file", text, false),
-        RedirectWord::Dynamic if duplicates_stdout => ("fd_or_file", raw.to_owned(), true),
-        RedirectWord::Dynamic => ("fd", raw.to_owned(), true),
-        RedirectWord::Static(_) | RedirectWord::Ambiguous => ("ambiguous", raw.to_owned(), false),
+        RedirectWord::Static(text) if text == CLOSE || is_fd_number(&text) => {
+            (RedirectKind::Fd, text, false)
+        }
+        RedirectWord::Static(text) if duplicates_stdout => (RedirectKind::File, text, false),
+        RedirectWord::Dynamic if duplicates_stdout => {
+            (RedirectKind::FdOrFile, raw.to_owned(), true)
+        }
+        RedirectWord::Dynamic => (RedirectKind::Fd, raw.to_owned(), true),
+        RedirectWord::Static(_) | RedirectWord::Ambiguous => {
+            (RedirectKind::Ambiguous, raw.to_owned(), false)
+        }
     }
 }
 
 fn move_target(source: &str, raw: &str) -> Target {
     match resolve_redirect_word(source) {
-        RedirectWord::Static(text) if is_fd_number(&text) => ("fd", format!("{text}-"), false),
-        RedirectWord::Static(text) if text == CLOSE => ("fd", CLOSE.to_owned(), false),
-        RedirectWord::Ambiguous => ("fd", CLOSE.to_owned(), false),
-        RedirectWord::Dynamic => ("fd", raw.to_owned(), true),
-        RedirectWord::Static(_) => ("ambiguous", raw.to_owned(), false),
+        RedirectWord::Static(text) if is_fd_number(&text) => {
+            (RedirectKind::Fd, format!("{text}-"), false)
+        }
+        RedirectWord::Static(text) if text == CLOSE => (RedirectKind::Fd, CLOSE.to_owned(), false),
+        RedirectWord::Ambiguous => (RedirectKind::Fd, CLOSE.to_owned(), false),
+        RedirectWord::Dynamic => (RedirectKind::Fd, raw.to_owned(), true),
+        RedirectWord::Static(_) => (RedirectKind::Ambiguous, raw.to_owned(), false),
     }
 }
 
