@@ -94,6 +94,11 @@ fn unquoted_heredoc_line_continuation_is_supported_and_dynamic() {
 }
 
 #[test]
+fn ansi_c_quote_in_parameter_default_substitution_with_line_continuation_is_unsupported() {
+    split_unsupported("echo ${x:-$(printf '<%s>' $'a\\\nb')}\n");
+}
+
+#[test]
 fn line_continuation_outside_ansi_c_quote_is_supported() {
     let cmds = split("echo $'a' \\\n b\n");
     assert_eq!(name(&cmds[0]), Some("echo"));
